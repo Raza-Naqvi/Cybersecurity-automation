@@ -16,6 +16,7 @@
 ## ⚡ Critical Commands (Build & Run)
 
 - **Install:** `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && pip install -e .`
+- **Add a target:** `python scripts/manage_scope.py add` (interactive) — never hand-edit `config/scope.json`.
 - **Run — recon:** `python scripts/run_recon.py --target <name-from-scope.json>`
 - **Run — auth/session test:** `python scripts/run_auth_test.py --target <name> --protected-path /account --logout-path /logout`
 - **Run — IDOR test:** `python scripts/run_idor_test.py --target <name> --cases config/idor_cases/<name>.json`
@@ -32,6 +33,7 @@
 
 - `src/security_toolkit/config.py` -> The authorization gate. Loads `config/scope.json` and env vars. Every check resolves its target through here — never hardcode a path/URL elsewhere.
 - `src/security_toolkit/scope_guard.py` -> Shared "never request a URL outside the target's base_url" check, used by every HTTP-based module.
+- `src/security_toolkit/scope_manager.py` -> Pure add/upsert/remove/save logic for `config/scope.json`, behind `scripts/manage_scope.py`. Nothing should hand-edit scope.json directly anymore.
 - `src/security_toolkit/recon/fingerprint.py` -> Phase 4.2 black-box recon: exposed sensitive files, tech-stack fingerprinting via headers/cookies, missing security headers, xmlrpc.php exposure, robots.txt/sitemap.xml. HTTP-only.
 - `src/security_toolkit/recon/auth.py` -> Pluggable login adapters selected by `auth.type` in scope.json (`wordpress`, `form_session`, `json_token`). Add a new type here only if no existing adapter fits; otherwise it's config, not code.
 - `src/security_toolkit/recon/provision.py` -> Creates the two disposable IDOR test accounts via a site's own public signup endpoint (`register_via_api`). Invite-only sites stay manual — ask dev for credentials only, never code/server access.

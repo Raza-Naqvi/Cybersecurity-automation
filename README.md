@@ -43,15 +43,30 @@ Every script resolves its target through `config/scope.json`, which is
 sites they're actually authorized to test. There is no way to point a
 script at a URL that isn't listed there.
 
-1. Copy the template: `cp config/scope.example.json config/scope.json`
-2. Edit it to list only systems your team has signed-off access to test —
-   a staging clone, not production, per the playbook's safety rule.
-3. Each target needs a `name` (what you'll pass to `--target`) and
-   `base_url`. Add an `auth` block too if you'll run the IDOR tester —
-   see that section below.
+Add a target with `scripts/manage_scope.py` — no manual JSON editing:
+
+```bash
+python scripts/manage_scope.py add
+```
+
+It walks you through name, base URL, and (optionally) the login setup
+for the IDOR/auth testers, interactively. For scripted/non-interactive
+use, pass flags instead, e.g.:
+
+```bash
+python scripts/manage_scope.py add --name example-staging --base-url https://staging.example.com \
+  --type laravel --auth-type form_session --login-url https://staging.example.com/login \
+  --username-field email --csrf-page-url https://staging.example.com/login --csrf-field-name _token \
+  --no-interactive
+```
+
+Other commands: `python scripts/manage_scope.py list` to see configured
+targets, `python scripts/manage_scope.py remove --name <name>` to drop
+one. Only list systems your team has signed-off access to test — a
+staging clone, not production, per the playbook's safety rule.
 
 If a script errors with "`X` is not in config/scope.json" — that's working
-as intended. Add the target there first.
+as intended. Add the target first with `manage_scope.py add`.
 
 ## Setup
 
@@ -276,6 +291,7 @@ security-toolkit/
 ├── src/security_toolkit/
 │   ├── config.py                    # Authorization gate + env loading — every check goes through this
 │   ├── scope_guard.py                # Shared "never request outside base_url" check
+│   ├── scope_manager.py              # Add/list/remove-target logic behind scripts/manage_scope.py
 │   ├── recon/                        # Black-box modules — HTTP(S) only, the normal workflow
 │   │   ├── fingerprint.py            # Phase 4.2: recon — exposed files, tech fingerprint, xmlrpc, robots.txt
 │   │   ├── auth.py                   # Pluggable login adapters (WordPress/Laravel/JSON-token/custom)
@@ -293,6 +309,7 @@ security-toolkit/
 │   └── reporting/
 │       └── report.py                 # Findings -> JSON + HTML report
 ├── scripts/
+│   ├── manage_scope.py                # Add/list/remove targets in scope.json — no manual JSON editing
 │   ├── run_recon.py                  # CLI entrypoint (black-box)
 │   ├── run_auth_test.py              # CLI entrypoint (black-box)
 │   ├── run_idor_test.py              # CLI entrypoint (black-box)
