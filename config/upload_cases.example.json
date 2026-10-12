@@ -1,0 +1,20 @@
+{
+  "_comment": "Copy to e.g. config/upload_cases/<target-name>.json and list the upload endpoints to probe. Set response_url_json_path if the upload response returns the file's URL in JSON (dotted path, e.g. 'data.url'), or uploaded_file_url_template if the app's upload URLs follow a predictable pattern ('{filename}' gets substituted). Without either, this only reports whether the upload was accepted, not whether it executed.",
+  "cases": [
+    {
+      "name": "profile picture upload",
+      "upload_path": "/api/profile/avatar",
+      "method": "post",
+      "file_field_name": "file",
+      "extra_fields": {},
+      "response_url_json_path": "data.url"
+    },
+    {
+      "name": "wordpress media upload",
+      "upload_path": "/wp-json/wp/v2/media",
+      "method": "post",
+      "file_field_name": "file",
+      "uploaded_file_url_template": "/wp-content/uploads/{filename}"
+    }
+  ]
+}

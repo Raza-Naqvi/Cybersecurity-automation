@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to e.g. config/idor_cases/<target-name>.json and list the endpoints to test for horizontal IDOR. owner_id must be an ID that belongs to the Session A test account.",
+  "cases": [
+    {"name": "order lookup", "url_template": "/api/orders/{id}", "owner_id": "REPLACE_WITH_USER_A_ORDER_ID"},
+    {"name": "profile lookup", "url_template": "/api/users/{id}/profile", "owner_id": "REPLACE_WITH_USER_A_ID"}
+  ]
+}

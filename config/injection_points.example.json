@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to e.g. config/injection_points/<target-name>.json and list the parameters to probe. param_location is 'query' | 'form' | 'json'. extra_params carries any other required fields (e.g. a CSRF token won't be needed for a JSON API, but a Laravel form POST might need one — add it here if the endpoint 400s without it).",
+  "points": [
+    {"name": "search box", "path": "/search", "method": "get", "param_name": "q", "param_location": "query"},
+    {"name": "login username field (NoSQLi shape)", "path": "/api/login", "method": "post", "param_name": "password", "param_location": "json", "extra_params": {"username": "idor_user_a"}}
+  ]
+}

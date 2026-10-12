@@ -1,0 +1,43 @@
+{
+  "_comment": "Copy to e.g. config/business_logic_cases/<target-name>.json. Each case has to be learned from using the app normally first (what the real checkout/coupon/webhook flow looks like) — this doesn't guess at your app's logic for you.",
+  "price_tamper_cases": [
+    {
+      "name": "checkout price override",
+      "path": "/api/checkout",
+      "method": "post",
+      "param_name": "price",
+      "param_location": "json",
+      "tampered_value": 0.01,
+      "extra_params": {"product_id": "REPLACE_WITH_A_REAL_PRODUCT_ID", "quantity": 1}
+    }
+  ],
+  "coupon_reuse_cases": [
+    {
+      "name": "single-use welcome coupon",
+      "path": "/api/cart/apply-coupon",
+      "method": "post",
+      "param_name": "coupon_code",
+      "code": "REPLACE_WITH_A_REAL_SINGLE_USE_CODE",
+      "param_location": "json",
+      "max_allowed_uses": 1
+    }
+  ],
+  "rate_limited_action_cases": [
+    {
+      "name": "referral code redemption",
+      "path": "/api/referrals/redeem",
+      "method": "post",
+      "payload": {"referral_code": "REPLACE_WITH_A_TEST_CODE"},
+      "param_location": "json"
+    }
+  ],
+  "webhook_forgery_cases": [
+    {
+      "name": "stripe payment_intent.succeeded with no signature",
+      "path": "/webhooks/stripe",
+      "payload": {"type": "payment_intent.succeeded", "data": {"object": {"id": "pi_test_forged"}}},
+      "bogus_signature_header": "Stripe-Signature",
+      "bogus_signature_value": "t=0,v1=deadbeef"
+    }
+  ]
+}

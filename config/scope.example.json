@@ -1,0 +1,55 @@
+{
+  "_comment": "Copy this file to scope.json (gitignored) and fill in ONLY systems your team owns or has written authorization to test. Every script refuses to run against a target that isn't listed here. The 'auth' block is only needed for the IDOR tester (scripts/run_idor_test.py) — see src/security_toolkit/recon/auth.py for the full schema per type.",
+  "authorized_targets": [
+    {
+      "name": "example-wordpress-staging",
+      "type": "wordpress",
+      "environment": "staging",
+      "wp_path": "/var/www/staging.example.com",
+      "base_url": "https://staging.example.com",
+      "known_admin_logins": ["admin", "site-owner"],
+      "notes": "Staging clone only. Never point this config at a production path.",
+      "auth": {
+        "type": "wordpress",
+        "login_url": "https://staging.example.com/wp-login.php"
+      }
+    },
+    {
+      "name": "example-laravel-staging",
+      "type": "laravel",
+      "environment": "staging",
+      "wp_path": null,
+      "base_url": "https://staging-app.example.com",
+      "known_admin_logins": [],
+      "notes": "Classic server-rendered Laravel login with CSRF.",
+      "auth": {
+        "type": "form_session",
+        "login_url": "https://staging-app.example.com/login",
+        "username_field": "email",
+        "password_field": "password",
+        "csrf": {
+          "page_url": "https://staging-app.example.com/login",
+          "field_name": "_token"
+        }
+      }
+    },
+    {
+      "name": "example-node-staging",
+      "type": "node",
+      "environment": "staging",
+      "wp_path": null,
+      "base_url": "https://staging-api.example.com",
+      "known_admin_logins": [],
+      "notes": "Custom Express API, JSON login returning a JWT.",
+      "auth": {
+        "type": "json_token",
+        "login_url": "https://staging-api.example.com/api/login",
+        "username_field": "email",
+        "password_field": "password",
+        "token_path": "data.token",
+        "header_name": "Authorization",
+        "header_prefix": "Bearer "
+      }
+    }
+  ]
+}
