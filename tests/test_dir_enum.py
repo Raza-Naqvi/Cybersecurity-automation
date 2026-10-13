@@ -74,6 +74,7 @@ def test_run_dirsearch_passes_targets_base_url_and_extensions(target, tmp_path):
     assert args[args.index("-e") + 1] == "php,env"
     assert "-O" in args
     assert args[args.index("-O") + 1] == "plain"
+    assert "--auto-calibration" in args
 
 
 def test_run_dirsearch_nonzero_exit_is_flagged_not_treated_as_clean(target, tmp_path):
@@ -107,6 +108,35 @@ def test_run_dirsearch_timeout_flagged(target, tmp_path):
 
     assert result.flagged is True
     assert "timed out" in result.detail
+
+
+def test_run_dirsearch_large_result_set_truncates_and_warns(target, tmp_path):
+    """A soft-404 app can make dirsearch 'find' most of its wordlist at
+    once — the detail text should stay readable and warn that this
+    looks like a false-positive flood, not dump every path.
+    """
+    output_path = tmp_path / "dirsearch_out.txt"
+    lines = "\n".join(f"301    100B   https://staging.example.com/fake{i}/" for i in range(40))
+    output_path.write_text(lines, encoding="utf-8")
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        result = run_dirsearch(target, output_path=output_path)
+
+    assert result.flagged is True
+    assert len(result.found_paths) == 40
+    assert "+10 more" in result.detail
+    assert "false-positive flood" in result.detail
+
+
+def test_run_dirsearch_small_result_set_has_no_false_positive_warning(target, tmp_path):
+    output_path = tmp_path / "dirsearch_out.txt"
+    output_path.write_text("200   1234B   https://staging.example.com/admin/\n", encoding="utf-8")
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        result = run_dirsearch(target, output_path=output_path)
+
+    assert result.flagged is True
+    assert "false-positive flood" not in result.detail
 
 
 def test_run_dirsearch_rejects_target_without_base_url():

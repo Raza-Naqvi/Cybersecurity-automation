@@ -39,6 +39,12 @@ class DirEnumResult:
     detail: str
 
 
+#: How many found paths to spell out in `detail` before summarizing the
+#: rest — a soft-404 app can make `found_paths` huge (see module
+#: docstring); the full list still lives in `found_paths` either way.
+_MAX_PATHS_IN_DETAIL = 30
+
+
 def run_dirsearch(
     target: Target,
     extensions: str = DEFAULT_EXTENSIONS,
@@ -48,6 +54,18 @@ def run_dirsearch(
 ) -> DirEnumResult:
     """Run dirsearch's wordlist-based path brute force against the
     target's base_url and flag any path it reports as found.
+
+    **This is a signal for a human to confirm, not a final verdict** —
+    same caveat `injection_testing.py` gives its own flagged results.
+    An app that redirects every unmatched path to the same place with a
+    non-404 status (a "soft 404") can make dirsearch "find" most of its
+    wordlist at once; `--auto-calibration` asks dirsearch to detect and
+    filter that pattern itself, but it isn't foolproof for every app
+    shape (e.g. a site mounted under a subpath). If `found_paths` looks
+    suspiciously large or includes obviously-made-up paths next to real
+    ones, confirm by requesting a definitely-nonexistent path yourself —
+    the same status code on both means it's a false positive, not a
+    real exposure.
 
     `output_path` exists mainly for tests — real callers should rely on
     the default (a throwaway temp file). Parsing dirsearch's output is a
@@ -67,7 +85,10 @@ def run_dirsearch(
         resolved_output_path = output_path or (Path(tmp) / "dirsearch_output.txt")
         try:
             result = subprocess.run(
-                [*cmd, "-u", target.base_url, "-e", extensions, "-O", "plain", "-o", str(resolved_output_path)],
+                [
+                    *cmd, "-u", target.base_url, "-e", extensions, "-O", "plain",
+                    "-o", str(resolved_output_path), "--auto-calibration",
+                ],
                 capture_output=True, text=True, timeout=timeout, check=False,
             )
         except FileNotFoundError as exc:
@@ -97,9 +118,25 @@ def run_dirsearch(
             )
 
     flagged = len(found_paths) > 0
-    detail = (
-        f"dirsearch found {len(found_paths)} path(s): {', '.join(found_paths)}"
-        if flagged
-        else "dirsearch found no additional paths beyond 404."
-    )
+    detail = _build_detail(found_paths)
     return DirEnumResult(tool="dirsearch", succeeded=True, flagged=flagged, found_paths=found_paths, detail=detail)
+
+
+def _build_detail(found_paths: tuple[str, ...]) -> str:
+    if not found_paths:
+        return "dirsearch found no additional paths beyond 404."
+
+    shown = found_paths[:_MAX_PATHS_IN_DETAIL]
+    listed = ", ".join(shown)
+    if len(found_paths) > len(shown):
+        listed += f", ... (+{len(found_paths) - len(shown)} more, see found_paths for the full list)"
+
+    note = (
+        " SIGNAL, NOT A VERDICT: if this count looks unusually large, confirm by "
+        "requesting a definitely-nonexistent path yourself — the same status code as "
+        "these hits means the app returns a non-404 'soft 404' for everything and this "
+        "is a false-positive flood, not real findings."
+        if len(found_paths) > _MAX_PATHS_IN_DETAIL
+        else ""
+    )
+    return f"dirsearch found {len(found_paths)} path(s): {listed}.{note}"
