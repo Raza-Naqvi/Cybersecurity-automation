@@ -241,9 +241,10 @@ def main() -> int:
     )
     results.extend([testssl_result, nikto_result])
 
-    # Optional recon enhancements (recon/subdomain_enum.py, recon/dir_enum.py) —
-    # neither is required: run_recon.py already reports "tool not found" per
-    # check gracefully rather than failing the whole recon script, so these
+    # Optional recon/infra enhancements (recon/subdomain_enum.py,
+    # recon/dir_enum.py, infra_testing.run_nuclei) — none is required:
+    # run_recon.py/run_infra_test.py already report "tool not found" per
+    # check gracefully rather than failing the whole script, so these
     # never block "this machine is ready" the way testssl/nikto do.
     subfinder_result = check_tool_on_path(
         display_name="subfinder",
@@ -261,7 +262,14 @@ def main() -> int:
         check_only=args.check_only,
         extra_runtime="python3",
     )
-    optional_results = [subfinder_result, dirsearch_result]
+    nuclei_result = check_tool_on_path(
+        display_name="nuclei",
+        which_name="nuclei",
+        fix_hint="go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest, "
+        "or download a prebuilt binary — see docs/pentest-tools-howto.md §2.3. "
+        "Run 'nuclei -update-templates' once after installing.",
+    )
+    optional_results = [subfinder_result, dirsearch_result, nuclei_result]
     results.extend(optional_results)
 
     print()
@@ -274,7 +282,7 @@ def main() -> int:
         print("❌ Neither testssl.sh nor nikto is available — infra checks need at least one.")
     for optional in optional_results:
         if not optional.passed:
-            print(f"ℹ️  {optional.name} not available — recon still runs, just reports that check as unavailable.")
+            print(f"ℹ️  {optional.name} not available — the check it's used in still runs, just reports it as unavailable.")
 
     core_results = [r for r in results if r not in (testssl_result, nikto_result, *optional_results)]
     all_core_ok = all(r.passed for r in core_results)

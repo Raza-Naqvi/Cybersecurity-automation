@@ -12,10 +12,10 @@ the vendored nikto/dirsearch need to run as `perl nikto.pl`/`python3
 dirsearch.py` — two separate argv elements, not something
 `subprocess.run` can split out of one string.
 
-`subfinder` has no vendoring fallback: it's a compiled Go binary, not a
-script that can run straight out of a git clone like testssl.sh/nikto/
-dirsearch can — install it via `go install` or a downloaded release
-binary (see docs/pentest-tools-howto.md).
+`subfinder`/`nuclei` have no vendoring fallback: both are compiled Go
+binaries, not scripts that can run straight out of a git clone like
+testssl.sh/nikto/dirsearch can — install either via `go install` or a
+downloaded release binary (see docs/pentest-tools-howto.md).
 """
 
 from __future__ import annotations
@@ -61,6 +61,14 @@ def resolve_subfinder_bin() -> tuple[str, ...]:
     """
     on_path = shutil.which("subfinder")
     return (on_path,) if on_path else ("subfinder",)
+
+
+def resolve_nuclei_bin() -> tuple[str, ...]:
+    """PATH's `nuclei`, else the bare command name (no vendoring
+    fallback — see module docstring).
+    """
+    on_path = shutil.which("nuclei")
+    return (on_path,) if on_path else ("nuclei",)
 
 
 def resolve_dirsearch_bin() -> tuple[str, ...]:

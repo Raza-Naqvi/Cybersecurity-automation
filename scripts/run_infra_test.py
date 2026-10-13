@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """CLI: Phase 4.8 black-box infra checks for an authorized target.
 
-Wraps testssl.sh (TLS/cert misconfiguration) and nikto (general server
-misconfiguration/outdated-software scanning) — both run over the network
-against the target's base_url, no filesystem/DB/server access needed.
-Neither tool ships with this repo; install them separately.
+Wraps testssl.sh (TLS/cert misconfiguration), nikto (general server
+misconfiguration/outdated-software scanning), and nuclei (broad
+CVE-template-based scanning) — all run over the network against the
+target's base_url, no filesystem/DB/server access needed. None ship
+with this repo; install them separately (testssl.sh/nikto are required,
+nuclei is optional — see docs/pentest-tools-howto.md).
 
 Usage:
     python scripts/run_infra_test.py --target example-staging
@@ -16,7 +18,7 @@ import argparse
 import sys
 
 from security_toolkit.config import load_authorized_target_cli
-from security_toolkit.recon.infra_testing import run_nikto, run_testssl
+from security_toolkit.recon.infra_testing import run_nikto, run_nuclei, run_testssl
 from security_toolkit.reporting.cloud_report import upload_report_cli
 from security_toolkit.reporting.report import Finding, build_report
 
@@ -26,8 +28,10 @@ def main() -> int:
     parser.add_argument("--target", required=True, help="Target name from config/scope.json")
     parser.add_argument("--skip-testssl", action="store_true")
     parser.add_argument("--skip-nikto", action="store_true")
+    parser.add_argument("--skip-nuclei", action="store_true", help="Skip the nuclei check")
     parser.add_argument("--testssl-bin", help="Override the resolved testssl.sh command (PATH/vendor/ auto-detected otherwise)")
     parser.add_argument("--nikto-bin", help="Override the resolved nikto command (PATH/vendor/ auto-detected otherwise)")
+    parser.add_argument("--nuclei-bin", help="Override the resolved nuclei command (PATH auto-detected otherwise)")
     args = parser.parse_args()
 
     target = load_authorized_target_cli(args.target)
@@ -56,8 +60,16 @@ def main() -> int:
         except RuntimeError as exc:
             findings.append(Finding(name="nikto (server misconfiguration)", flagged=True, detail=f"check skipped: {exc}"))
 
+    if not args.skip_nuclei:
+        try:
+            nuclei_cmd = (args.nuclei_bin,) if args.nuclei_bin else None
+            result = run_nuclei(target, nuclei_cmd=nuclei_cmd)
+            findings.append(Finding(name="nuclei (CVE-template scanning)", flagged=result.flagged, detail=result.detail))
+        except RuntimeError as exc:
+            findings.append(Finding(name="nuclei (CVE-template scanning)", flagged=True, detail=f"check skipped: {exc}"))
+
     if not findings:
-        print("Nothing to run — both checks were skipped.", file=sys.stderr)
+        print("Nothing to run — all checks were skipped.", file=sys.stderr)
         return 1
 
     report = build_report(title="Infra Test", target=target.name, findings=findings)

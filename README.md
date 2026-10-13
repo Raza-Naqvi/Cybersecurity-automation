@@ -336,8 +336,8 @@ Four checks, each independently configured:
   it's accepted as real.
 
 **Infra tester** (Phase 4.8 — TLS/cert misconfiguration and general
-server misconfiguration). Wraps two external tools the playbook already
-names rather than reimplementing them — install them separately first:
+server misconfiguration). Wraps three external tools rather than
+reimplementing them — install them separately first:
 
 ```bash
 brew install testssl nikto   # or your platform's equivalent
@@ -348,8 +348,14 @@ python scripts/run_infra_test.py --target example-staging
 HIGH/CRITICAL/VULNERABLE markers in its own output; `nikto` scans for
 general server misconfiguration and outdated software, flagged if it
 reports any findings. Both run entirely over the network against the
-target's `base_url`. Use `--skip-testssl`/`--skip-nikto` to run just one.
-Install/usage details for both (and every other external tool this
+target's `base_url`, and at least one of the two is required. `nuclei`
+(optional — install separately, `go install -v
+github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest` or a prebuilt
+binary) runs a broad template-based scan and flags any match above
+"info" severity, same "signal, not a verdict" caveat as the other
+scanners here. Use `--skip-testssl`/`--skip-nikto`/`--skip-nuclei` to
+run just the ones you want.
+Install/usage details for all three (and every other external tool this
 toolkit wraps or references) are in `docs/pentest-tools-howto.md`.
 
 Every report uploads straight to Cloudinary as JSON + HTML — nothing is
@@ -436,7 +442,7 @@ security-toolkit/
 │   │   ├── ssrf_testing.py           # Phase 4.5: SSRF via webhook.site out-of-band callback confirmation
 │   │   ├── upload_testing.py         # Phase 4.6: file-upload testing (extension/content-type/polyglot)
 │   │   ├── business_logic_testing.py # Phase 4.7: price tamper, coupon reuse, rate limiting, forged webhooks
-│   │   └── infra_testing.py          # Phase 4.8: wraps testssl.sh + nikto
+│   │   └── infra_testing.py          # Phase 4.8: wraps testssl.sh + nikto (required), nuclei (optional)
 │   ├── legacy_whitebox/              # NOT used currently — needs server/DB/code access, see above
 │   │   ├── incident_triage.py
 │   │   ├── monthly_checklist.py
