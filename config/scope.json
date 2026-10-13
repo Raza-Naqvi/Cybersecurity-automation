@@ -1,0 +1,23 @@
+{
+  "authorized_targets": [
+    {
+      "name": "cheerlytics",
+      "type": "laravel",
+      "environment": "staging",
+      "wp_path": null,
+      "base_url": "https://services83.demowebsitelinks.com/cheerlytics/public/",
+      "known_admin_logins": [],
+      "notes": "",
+      "auth": {
+        "type": "form_session",
+        "login_url": "https://services83.demowebsitelinks.com/cheerlytics/public/login",
+        "username_field": "email",
+        "password_field": "password",
+        "csrf": {
+          "page_url": "https://services83.demowebsitelinks.com/cheerlytics/public/login",
+          "field_name": "_token"
+        }
+      }
+    }
+  ]
+}

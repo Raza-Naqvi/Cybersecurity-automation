@@ -1,0 +1,14 @@
+{
+  "cases": [
+    {
+      "name": "coach submission upload",
+      "upload_path": "/api/player/submissions",
+      "method": "post",
+      "file_field_name": "file",
+      "extra_fields": {
+        "coach_id": "29",
+        "title": "security toolkit test upload"
+      }
+    }
+  ]
+}
