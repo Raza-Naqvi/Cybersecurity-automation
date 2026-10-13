@@ -9,6 +9,7 @@ from security_toolkit.doctor_checks import (
     check_env_file,
     check_package_importable,
     check_python_version,
+    check_tool_on_path,
     detect_os,
     detect_package_manager,
     parse_env_file,
@@ -119,3 +120,17 @@ def test_build_git_clone_command(tmp_path):
     cmd = build_git_clone_command("https://github.com/x/y.git", tmp_path / "y")
     assert cmd[:3] == ["git", "clone", "--depth"]
     assert cmd[-1] == str(tmp_path / "y")
+
+
+def test_check_tool_on_path_found():
+    with patch("shutil.which", return_value="/usr/local/bin/subfinder"):
+        result = check_tool_on_path("subfinder", "subfinder", fix_hint="install it")
+    assert result.passed is True
+    assert result.detail == "/usr/local/bin/subfinder"
+
+
+def test_check_tool_on_path_not_found():
+    with patch("shutil.which", return_value=None):
+        result = check_tool_on_path("subfinder", "subfinder", fix_hint="go install ...")
+    assert result.passed is False
+    assert result.fix_hint == "go install ..."

@@ -30,10 +30,16 @@ from security_toolkit.doctor_checks import (
     check_env_file,
     check_package_importable,
     check_python_version,
+    check_tool_on_path,
     detect_os,
     detect_package_manager,
 )
-from security_toolkit.tool_locations import VENDOR_DIR, VENDORED_NIKTO_PATH, VENDORED_TESTSSL_PATH
+from security_toolkit.tool_locations import (
+    VENDOR_DIR,
+    VENDORED_DIRSEARCH_PATH,
+    VENDORED_NIKTO_PATH,
+    VENDORED_TESTSSL_PATH,
+)
 
 ENV_PATH = REPO_ROOT / ".env"
 ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"
@@ -235,6 +241,29 @@ def main() -> int:
     )
     results.extend([testssl_result, nikto_result])
 
+    # Optional recon enhancements (recon/subdomain_enum.py, recon/dir_enum.py) —
+    # neither is required: run_recon.py already reports "tool not found" per
+    # check gracefully rather than failing the whole recon script, so these
+    # never block "this machine is ready" the way testssl/nikto do.
+    subfinder_result = check_tool_on_path(
+        display_name="subfinder",
+        which_name="subfinder",
+        fix_hint="go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest, "
+        "or download a prebuilt binary — see docs/pentest-tools-howto.md §8.2",
+    )
+    dirsearch_result = ensure_infra_tool(
+        display_name="dirsearch",
+        which_name="dirsearch",
+        vendored_path=VENDORED_DIRSEARCH_PATH,
+        clone_dest=VENDOR_DIR / "dirsearch",
+        package_name="dirsearch",
+        git_url="https://github.com/maurosoria/dirsearch.git",
+        check_only=args.check_only,
+        extra_runtime="python3",
+    )
+    optional_results = [subfinder_result, dirsearch_result]
+    results.extend(optional_results)
+
     print()
     for result in results:
         _print_result(result)
@@ -243,8 +272,11 @@ def main() -> int:
     print()
     if not infra_ok:
         print("❌ Neither testssl.sh nor nikto is available — infra checks need at least one.")
+    for optional in optional_results:
+        if not optional.passed:
+            print(f"ℹ️  {optional.name} not available — recon still runs, just reports that check as unavailable.")
 
-    core_results = [r for r in results if r not in (testssl_result, nikto_result)]
+    core_results = [r for r in results if r not in (testssl_result, nikto_result, *optional_results)]
     all_core_ok = all(r.passed for r in core_results)
 
     if all_core_ok and infra_ok:
