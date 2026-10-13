@@ -10,13 +10,21 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SCOPE_PATH = REPO_ROOT / "config" / "scope.json"
+
+# The toolkit's OWN MongoDB state (credentials_db.py, report_index.py) —
+# never the target app's database.
+DEFAULT_MONGODB_URI = "mongodb://localhost:27017"
+DEFAULT_MONGODB_DB_NAME = "security_toolkit"
 
 
 class ScopeError(RuntimeError):
@@ -100,6 +108,29 @@ def load_credentials_from_env(prefix: str, dotenv_path: Path | None = None) -> C
     return Credentials(username=username, password=password)
 
 
+@lru_cache(maxsize=None)
+def _mongo_client(uri: str) -> Any:
+    from pymongo import MongoClient  # lazy import — pymongo only required when Mongo is actually used
+
+    return MongoClient(uri)
+
+
+def get_mongo_database(uri: str | None = None, db_name: str | None = None) -> Any:
+    """Resolve the toolkit's own MongoDB database (credentials_db.py's and
+    report_index.py's shared connection logic) — reusing one cached
+    `MongoClient` per URI instead of opening a fresh connection per call.
+
+    Never the target app's database; `MONGODB_URI`/`MONGODB_DB_NAME` are
+    the toolkit's own private store, read from the environment (loading
+    .env first if neither is already set).
+    """
+    if uri is None and not os.environ.get("MONGODB_URI"):
+        load_env()  # .env isn't loaded automatically anywhere else in the process
+
+    client = _mongo_client(uri or os.environ.get("MONGODB_URI", DEFAULT_MONGODB_URI))
+    return client[db_name or os.environ.get("MONGODB_DB_NAME", DEFAULT_MONGODB_DB_NAME)]
+
+
 def load_test_credentials(target_name: str, label: str, uri: str | None = None) -> Credentials:
     """Read one target's test-account credentials from the local
     MongoDB credential store (see credentials_db.py).
@@ -168,3 +199,19 @@ def load_authorized_target(name: str, scope_path: Path | None = None) -> Target:
             "Add it there before running any check against it."
         )
     return matches[0]
+
+
+def load_authorized_target_cli(name: str, scope_path: Path | None = None) -> Target | None:
+    """`load_authorized_target`, with the "print to stderr and return None on
+    failure" handling every scripts/run_*.py entrypoint needs identically.
+
+    Callers just do:
+        target = load_authorized_target_cli(args.target)
+        if target is None:
+            return 1
+    """
+    try:
+        return load_authorized_target(name, scope_path)
+    except ScopeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return None

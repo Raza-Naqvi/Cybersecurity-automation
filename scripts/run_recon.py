@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from security_toolkit.config import ScopeError, load_authorized_target
+from security_toolkit.config import load_authorized_target_cli
 from security_toolkit.recon import fingerprint
 from security_toolkit.reporting.cloud_report import upload_report_cli
 from security_toolkit.reporting.report import Finding, build_report
@@ -24,10 +24,8 @@ def main() -> int:
     parser.add_argument("--target", required=True, help="Target name from config/scope.json")
     args = parser.parse_args()
 
-    try:
-        target = load_authorized_target(args.target)
-    except ScopeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    target = load_authorized_target_cli(args.target)
+    if target is None:
         return 1
 
     if not target.base_url:

@@ -120,6 +120,11 @@ def check_jwt_claims(token: str) -> JwtFinding:
     return JwtFinding(check="claims", flagged=flagged, detail=detail)
 
 
+def _looks_like_jwt(cookie_value: str) -> bool:
+    """A JWT has three dot-separated segments (header.payload.signature)."""
+    return cookie_value.count(".") == 2
+
+
 def check_token_storage_hint(set_cookie_headers: tuple[str, ...], token_in_json_body: bool) -> JwtFinding:
     """Black-box hint at where the token is likely to end up client-side,
     without a browser: a JWT-shaped Set-Cookie without HttpOnly is
@@ -131,8 +136,7 @@ def check_token_storage_hint(set_cookie_headers: tuple[str, ...], token_in_json_
     jwt_cookie_without_httponly = [
         header
         for header in set_cookie_headers
-        if header.split("=", 1)[-1].split(";", 1)[0].count(".") == 2  # looks JWT-shaped: two dots
-        and "httponly" not in header.lower()
+        if _looks_like_jwt(header.split("=", 1)[-1].split(";", 1)[0]) and "httponly" not in header.lower()
     ]
     if jwt_cookie_without_httponly:
         return JwtFinding(

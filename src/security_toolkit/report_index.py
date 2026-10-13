@@ -7,13 +7,13 @@ dashboard will query.
 
 from __future__ import annotations
 
-import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-DEFAULT_DB_NAME = "security_toolkit"
+from security_toolkit.config import get_mongo_database
+
 COLLECTION_NAME = "report_index"
 
 
@@ -34,16 +34,7 @@ class ReportIndexEntry:
 
 
 def _collection(uri: str | None = None, db_name: str | None = None) -> Any:
-    from pymongo import MongoClient  # lazy import, same reasoning as credentials_db.py
-
-    if uri is None and not os.environ.get("MONGODB_URI"):
-        from security_toolkit.config import load_env
-
-        load_env()  # .env isn't loaded automatically anywhere else in the process
-
-    client = MongoClient(uri or os.environ.get("MONGODB_URI"))
-    database = client[db_name or os.environ.get("MONGODB_DB_NAME", DEFAULT_DB_NAME)]
-    return database[COLLECTION_NAME]
+    return get_mongo_database(uri, db_name)[COLLECTION_NAME]
 
 
 def add_report_entry(

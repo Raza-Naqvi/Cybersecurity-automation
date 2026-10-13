@@ -13,27 +13,18 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 
-from security_toolkit.config import ScopeError, load_authorized_target
+from security_toolkit.config import load_authorized_target_cli
 from security_toolkit.recon.business_logic_testing import (
-    CouponReuseCase,
-    PriceTamperCase,
-    RateLimitedActionCase,
-    WebhookForgeryCase,
     check_coupon_reuse,
     check_forged_webhook,
     check_price_tampering,
     check_rate_limited_action,
+    load_business_logic_cases,
 )
 from security_toolkit.reporting.cloud_report import upload_report_cli
 from security_toolkit.reporting.report import Finding, build_report
-
-
-def _load_cases(path: str) -> dict:
-    with open(path, encoding="utf-8") as handle:
-        return json.load(handle)
 
 
 def main() -> int:
@@ -42,61 +33,26 @@ def main() -> int:
     parser.add_argument("--cases", required=True, help="Path to a JSON file of business-logic cases")
     args = parser.parse_args()
 
-    try:
-        target = load_authorized_target(args.target)
-    except ScopeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    target = load_authorized_target_cli(args.target)
+    if target is None:
         return 1
 
-    data = _load_cases(args.cases)
+    cases = load_business_logic_cases(args.cases)
     findings = []
 
-    for item in data.get("price_tamper_cases", []):
-        case = PriceTamperCase(
-            name=item["name"],
-            path=item["path"],
-            method=item.get("method", "post"),
-            param_name=item.get("param_name", "price"),
-            param_location=item.get("param_location", "json"),
-            tampered_value=item.get("tampered_value", 0.01),
-            extra_params=item.get("extra_params", {}),
-        )
+    for case in cases.price_tamper:
         result = check_price_tampering(target, case)
         findings.append(Finding(name=f"{result.case_name} — price tamper", flagged=result.flagged, detail=result.detail))
 
-    for item in data.get("coupon_reuse_cases", []):
-        case = CouponReuseCase(
-            name=item["name"],
-            path=item["path"],
-            code=item["code"],
-            method=item.get("method", "post"),
-            param_name=item.get("param_name", "coupon_code"),
-            param_location=item.get("param_location", "json"),
-            extra_params=item.get("extra_params", {}),
-            max_allowed_uses=item.get("max_allowed_uses", 1),
-        )
+    for case in cases.coupon_reuse:
         result = check_coupon_reuse(target, case)
         findings.append(Finding(name=f"{result.case_name} — coupon reuse", flagged=result.flagged, detail=result.detail))
 
-    for item in data.get("rate_limited_action_cases", []):
-        case = RateLimitedActionCase(
-            name=item["name"],
-            path=item["path"],
-            method=item.get("method", "post"),
-            payload=item.get("payload", {}),
-            param_location=item.get("param_location", "json"),
-        )
+    for case in cases.rate_limited_action:
         result = check_rate_limited_action(target, case)
         findings.append(Finding(name=f"{result.case_name} — rate limiting", flagged=result.flagged, detail=result.detail))
 
-    for item in data.get("webhook_forgery_cases", []):
-        case = WebhookForgeryCase(
-            name=item["name"],
-            path=item["path"],
-            payload=item["payload"],
-            bogus_signature_header=item.get("bogus_signature_header"),
-            bogus_signature_value=item.get("bogus_signature_value", "t=0,v1=deadbeef"),
-        )
+    for case in cases.webhook_forgery:
         result = check_forged_webhook(target, case)
         findings.append(Finding(name=f"{result.case_name} — forged webhook", flagged=result.flagged, detail=result.detail))
 

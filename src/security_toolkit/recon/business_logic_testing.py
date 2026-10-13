@@ -26,6 +26,7 @@ the coupon's real limit) and encoded into the case.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -85,6 +86,71 @@ class WebhookForgeryCase:
     bogus_signature_value: str = "t=0,v1=deadbeef"
 
 
+@dataclass(frozen=True)
+class BusinessLogicCases:
+    price_tamper: tuple[PriceTamperCase, ...] = ()
+    coupon_reuse: tuple[CouponReuseCase, ...] = ()
+    rate_limited_action: tuple[RateLimitedActionCase, ...] = ()
+    webhook_forgery: tuple[WebhookForgeryCase, ...] = ()
+
+
+def load_business_logic_cases(path: str) -> BusinessLogicCases:
+    """Load every case type from a JSON file shaped like
+    `config/business_logic_cases.example.json` — kept next to the
+    dataclasses it builds, same pattern as
+    `injection_testing.load_injection_points`.
+    """
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    return BusinessLogicCases(
+        price_tamper=tuple(
+            PriceTamperCase(
+                name=item["name"],
+                path=item["path"],
+                method=item.get("method", "post"),
+                param_name=item.get("param_name", "price"),
+                param_location=item.get("param_location", "json"),
+                tampered_value=item.get("tampered_value", 0.01),
+                extra_params=item.get("extra_params", {}),
+            )
+            for item in data.get("price_tamper_cases", [])
+        ),
+        coupon_reuse=tuple(
+            CouponReuseCase(
+                name=item["name"],
+                path=item["path"],
+                code=item["code"],
+                method=item.get("method", "post"),
+                param_name=item.get("param_name", "coupon_code"),
+                param_location=item.get("param_location", "json"),
+                extra_params=item.get("extra_params", {}),
+                max_allowed_uses=item.get("max_allowed_uses", 1),
+            )
+            for item in data.get("coupon_reuse_cases", [])
+        ),
+        rate_limited_action=tuple(
+            RateLimitedActionCase(
+                name=item["name"],
+                path=item["path"],
+                method=item.get("method", "post"),
+                payload=item.get("payload", {}),
+                param_location=item.get("param_location", "json"),
+            )
+            for item in data.get("rate_limited_action_cases", [])
+        ),
+        webhook_forgery=tuple(
+            WebhookForgeryCase(
+                name=item["name"],
+                path=item["path"],
+                payload=item["payload"],
+                bogus_signature_header=item.get("bogus_signature_header"),
+                bogus_signature_value=item.get("bogus_signature_value", "t=0,v1=deadbeef"),
+            )
+            for item in data.get("webhook_forgery_cases", [])
+        ),
+    )
+
+
 def _send(
     target: Target,
     path: str,
@@ -110,19 +176,26 @@ def _send(
     return request_fn(url, **kwargs)
 
 
+def _accepted_detail(prefix: str, response: requests.Response, accepted_note: str) -> tuple[bool, str]:
+    """`(accepted, detail)` for the common "send once, flag on 2xx" shape
+    shared by price tampering and forged-webhook checks.
+    """
+    accepted = 200 <= response.status_code < 300
+    detail = f"status={response.status_code}; {prefix} was " + (
+        f"ACCEPTED — {accepted_note}" if accepted else "rejected, as expected."
+    )
+    return accepted, detail
+
+
 def check_price_tampering(
     target: Target, case: PriceTamperCase, session: requests.Session | None = None, timeout: float = 10.0
 ) -> BusinessLogicFinding:
     body = {**case.extra_params, case.param_name: case.tampered_value}
     response = _send(target, case.path, case.method, body, case.param_location, session, timeout)
-    accepted = 200 <= response.status_code < 300
-    detail = (
-        f"status={response.status_code}; tampered {case.param_name}={case.tampered_value!r} was "
-        + (
-            "ACCEPTED — confirm the server recomputes this value itself rather than trusting the request."
-            if accepted
-            else "rejected, as expected."
-        )
+    accepted, detail = _accepted_detail(
+        f"tampered {case.param_name}={case.tampered_value!r}",
+        response,
+        "confirm the server recomputes this value itself rather than trusting the request.",
     )
     return BusinessLogicFinding(case_name=case.name, check="price_tamper", flagged=accepted, detail=detail)
 
@@ -175,14 +248,10 @@ def check_forged_webhook(target: Target, case: WebhookForgeryCase, timeout: floa
     headers = {case.bogus_signature_header: case.bogus_signature_value} if case.bogus_signature_header else None
     response = _send(target, case.path, "post", case.payload, "json", None, timeout, headers=headers)
 
-    accepted = 200 <= response.status_code < 300
-    detail = (
-        f"status={response.status_code}; forged event with "
-        f"{'a bogus signature header' if case.bogus_signature_header else 'no signature header'} was "
-        + (
-            "ACCEPTED — the endpoint may not be verifying signatures. Confirm it didn't also apply a real side effect."
-            if accepted
-            else "rejected, as expected."
-        )
+    signature_note = "a bogus signature header" if case.bogus_signature_header else "no signature header"
+    accepted, detail = _accepted_detail(
+        f"forged event with {signature_note}",
+        response,
+        "the endpoint may not be verifying signatures. Confirm it didn't also apply a real side effect.",
     )
     return BusinessLogicFinding(case_name=case.name, check="forged_webhook", flagged=accepted, detail=detail)

@@ -27,9 +27,9 @@ Every request goes through `security_toolkit.scope_guard`.
 
 from __future__ import annotations
 
+import json
 import secrets
 from dataclasses import dataclass, field
-from typing import Any
 
 import requests
 
@@ -48,6 +48,27 @@ class UploadTestCase:
     extra_fields: dict = field(default_factory=dict)
     response_url_json_path: str | None = None  # e.g. "data.url", read from the upload response's JSON
     uploaded_file_url_template: str | None = None  # e.g. "/wp-content/uploads/{filename}"
+
+
+def load_upload_cases(path: str) -> list[UploadTestCase]:
+    """Load a list of `UploadTestCase`s from a JSON file shaped like
+    `config/upload_cases.example.json` — kept next to the dataclass it
+    builds, same pattern as `injection_testing.load_injection_points`.
+    """
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    return [
+        UploadTestCase(
+            name=item["name"],
+            upload_path=item["upload_path"],
+            method=item.get("method", "post"),
+            file_field_name=item.get("file_field_name", "file"),
+            extra_fields=item.get("extra_fields", {}),
+            response_url_json_path=item.get("response_url_json_path"),
+            uploaded_file_url_template=item.get("uploaded_file_url_template"),
+        )
+        for item in data.get("cases", [])
+    ]
 
 
 @dataclass(frozen=True)
@@ -117,6 +138,46 @@ def _resolve_uploaded_file_url(
     return None
 
 
+def _check_execution(
+    target: Target,
+    case: UploadTestCase,
+    payload: UploadPayload,
+    upload_response: requests.Response,
+    marker: str,
+    session: requests.Session | None,
+    timeout: float,
+) -> tuple[int | None, bool | None]:
+    """Fetch the uploaded file back (if a URL for it is available) and
+    report `(fetch_status_code, executed)` — `executed` stays None when
+    there's no URL to check, since that's "unknown", not "didn't run".
+    """
+    file_url = _resolve_uploaded_file_url(target, case, payload, upload_response)
+    if not file_url:
+        return None, None
+
+    caller = session if session is not None else requests
+    try:
+        fetch_response = caller.get(file_url, timeout=timeout)
+    except requests.RequestException:
+        return None, None
+
+    executed = marker in fetch_response.text and "<?php" not in fetch_response.text
+    return fetch_response.status_code, executed
+
+
+def _upload_detail(status_code: int, accepted: bool, executed: bool | None) -> str:
+    if executed:
+        return "EXECUTED: fetching the uploaded file returned the marker rendered as output, not raw source."
+    if not accepted:
+        return f"Upload rejected (status {status_code})."
+    if executed is None:
+        return (
+            f"Upload accepted (status {status_code}) but no URL was available to "
+            "confirm execution — set response_url_json_path or uploaded_file_url_template and re-run."
+        )
+    return f"Upload accepted (status {status_code}) but the file did not execute when fetched."
+
+
 def run_upload_test_case(
     target: Target, case: UploadTestCase, session: requests.Session | None = None, timeout: float = 10.0
 ) -> tuple[UploadFinding, ...]:
@@ -127,33 +188,11 @@ def run_upload_test_case(
         upload_response = _send_upload(target, case, payload, session, timeout)
         accepted = 200 <= upload_response.status_code < 300
 
-        executed: bool | None = None
-        fetch_status: int | None = None
-
-        if accepted:
-            file_url = _resolve_uploaded_file_url(target, case, payload, upload_response)
-            if file_url:
-                caller = session if session is not None else requests
-                try:
-                    fetch_response = caller.get(file_url, timeout=timeout)
-                except requests.RequestException:
-                    fetch_response = None
-                if fetch_response is not None:
-                    fetch_status = fetch_response.status_code
-                    executed = marker in fetch_response.text and "<?php" not in fetch_response.text
-
-        flagged = bool(executed) or (accepted and executed is None)
-        if executed:
-            detail = "EXECUTED: fetching the uploaded file returned the marker rendered as output, not raw source."
-        elif accepted and executed is None:
-            detail = (
-                f"Upload accepted (status {upload_response.status_code}) but no URL was available to "
-                "confirm execution — set response_url_json_path or uploaded_file_url_template and re-run."
-            )
-        elif accepted:
-            detail = f"Upload accepted (status {upload_response.status_code}) but the file did not execute when fetched."
-        else:
-            detail = f"Upload rejected (status {upload_response.status_code})."
+        fetch_status, executed = (
+            _check_execution(target, case, payload, upload_response, marker, session, timeout)
+            if accepted
+            else (None, None)
+        )
 
         findings.append(
             UploadFinding(
@@ -164,8 +203,8 @@ def run_upload_test_case(
                 accepted=accepted,
                 fetch_status_code=fetch_status,
                 executed=executed,
-                flagged=flagged,
-                detail=detail,
+                flagged=bool(executed) or (accepted and executed is None),
+                detail=_upload_detail(upload_response.status_code, accepted, executed),
             )
         )
 

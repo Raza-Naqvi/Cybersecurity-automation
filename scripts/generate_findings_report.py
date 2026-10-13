@@ -18,7 +18,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from security_toolkit.config import ScopeError, load_authorized_target
+from security_toolkit.config import load_authorized_target_cli
 from security_toolkit.findings_report import collect_flagged_findings, render_markdown
 
 
@@ -28,10 +28,8 @@ def main() -> int:
     parser.add_argument("--upload", action="store_true", help="Also upload the draft to Cloudinary as a .md file")
     args = parser.parse_args()
 
-    try:
-        target = load_authorized_target(args.target)
-    except ScopeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    target = load_authorized_target_cli(args.target)
+    if target is None:
         return 1
 
     findings = collect_flagged_findings(target.name)

@@ -1,0 +1,11 @@
+{
+  "webhook_forgery_cases": [
+    {
+      "name": "subscription confirm with forged payment_intent_id",
+      "path": "/api/player/subscription/confirm",
+      "payload": {
+        "payment_intent_id": "pi_3FAKE000000000000000000000"
+      }
+    }
+  ]
+}

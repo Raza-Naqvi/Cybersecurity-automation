@@ -41,7 +41,6 @@ method and pass it directly to `run_idor_suite` instead of going through
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -49,6 +48,7 @@ import requests
 
 from security_toolkit.config import Credentials
 from security_toolkit.json_paths import lookup_dotted_path
+from security_toolkit.recon.html_forms import extract_inputs
 
 
 class AuthConfigError(ValueError):
@@ -86,19 +86,14 @@ def _lookup_path(data: dict, dotted_path: str) -> Any:
 
 
 def _extract_csrf_token(html: str, field_name: str) -> str:
-    """Pull a hidden input's value out of an HTML login form.
-
-    Tries both attribute orders (name-before-value and value-before-name)
-    since different templating engines emit them differently.
+    """Pull a hidden input's value out of an HTML login form, via the
+    same shared `<input>` parsing `auth_detect.py`/`provision.py` use —
+    attribute order doesn't matter since it reads `name=`/`value=`
+    independently off each tag.
     """
-    patterns = (
-        rf'name=["\']{re.escape(field_name)}["\'][^>]*value=["\']([^"\']+)["\']',
-        rf'value=["\']([^"\']+)["\'][^>]*name=["\']{re.escape(field_name)}["\']',
-    )
-    for pattern in patterns:
-        match = re.search(pattern, html)
-        if match:
-            return match.group(1)
+    for field in extract_inputs(html):
+        if field["name"] == field_name:
+            return field["value"]
     raise AuthFailure(f"Could not find a '{field_name}' hidden field on the login page")
 
 

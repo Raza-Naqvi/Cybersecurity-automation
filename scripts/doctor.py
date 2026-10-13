@@ -32,7 +32,6 @@ from security_toolkit.doctor_checks import (
     check_python_version,
     detect_os,
     detect_package_manager,
-    parse_env_file,
 )
 from security_toolkit.tool_locations import VENDOR_DIR, VENDORED_NIKTO_PATH, VENDORED_TESTSSL_PATH
 
@@ -124,8 +123,7 @@ def check_cloudinary_ping() -> CheckResult:
         from dotenv import load_dotenv
 
         load_dotenv(ENV_PATH)
-        env_values = parse_env_file(ENV_PATH.read_text(encoding="utf-8")) if ENV_PATH.exists() else {}
-        env_result = check_cloudinary_env_keys({**env_values, **{k: v for k, v in os.environ.items() if k.startswith("CLOUDINARY_")}})
+        env_result = check_cloudinary_env_keys({k: v for k, v in os.environ.items() if k.startswith("CLOUDINARY_")})
         if not env_result.passed:
             return CheckResult(name="Cloudinary connection", passed=False, detail="not configured", fix_hint=env_result.fix_hint)
 

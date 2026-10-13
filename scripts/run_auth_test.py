@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from security_toolkit.config import Credentials, ScopeError, load_authorized_target, load_test_credentials
+from security_toolkit.config import Credentials, ScopeError, load_authorized_target_cli, load_test_credentials
 from security_toolkit.recon.auth import AuthConfigError, AuthFailure, build_auth_provider, login
 from security_toolkit.recon.jwt_testing import check_token_storage_hint
 from security_toolkit.recon.session_testing import (
@@ -40,10 +40,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    try:
-        target = load_authorized_target(args.target)
-    except ScopeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    target = load_authorized_target_cli(args.target)
+    if target is None:
         return 1
 
     if not target.auth:

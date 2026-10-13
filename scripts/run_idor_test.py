@@ -18,29 +18,19 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 
-from security_toolkit.config import ScopeError, load_authorized_target, load_test_credentials
+from security_toolkit.config import ScopeError, load_authorized_target_cli, load_test_credentials
 from security_toolkit.recon.auth import AuthConfigError, AuthFailure, build_auth_provider, login
 from security_toolkit.recon.idor_tester import (
-    IdorTestCase,
     OutOfScopeError,
     check_idor_case_rate_limiting,
     check_sequential_id_enumeration,
+    load_idor_cases,
     run_idor_suite,
 )
 from security_toolkit.reporting.cloud_report import upload_report_cli
 from security_toolkit.reporting.report import Finding, build_report
-
-
-def _load_cases(path: str) -> list[IdorTestCase]:
-    with open(path, encoding="utf-8") as handle:
-        data = json.load(handle)
-    return [
-        IdorTestCase(name=item["name"], url_template=item["url_template"], owner_id=item["owner_id"])
-        for item in data.get("cases", [])
-    ]
 
 
 def main() -> int:
@@ -53,10 +43,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    try:
-        target = load_authorized_target(args.target)
-    except ScopeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    target = load_authorized_target_cli(args.target)
+    if target is None:
         return 1
 
     if not target.auth:
@@ -87,7 +75,7 @@ def main() -> int:
         print(f"ERROR: login failed — {exc}", file=sys.stderr)
         return 1
 
-    cases = _load_cases(args.cases)
+    cases = load_idor_cases(args.cases)
     if not cases:
         print(f"ERROR: no test cases found in {args.cases}", file=sys.stderr)
         return 1

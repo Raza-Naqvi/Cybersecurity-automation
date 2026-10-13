@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from security_toolkit.config import ScopeError, load_authorized_target
+from security_toolkit.config import load_authorized_target_cli
 from security_toolkit.recon.injection_testing import (
     check_injection_point_rate_limiting,
     load_injection_points,
@@ -33,10 +33,8 @@ def main() -> int:
     parser.add_argument("--skip-rate-limit", action="store_true", help="Skip the automatic rate-limit check per point")
     args = parser.parse_args()
 
-    try:
-        target = load_authorized_target(args.target)
-    except ScopeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    target = load_authorized_target_cli(args.target)
+    if target is None:
         return 1
 
     points = load_injection_points(args.points)

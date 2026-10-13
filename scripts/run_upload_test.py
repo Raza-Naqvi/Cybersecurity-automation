@@ -15,30 +15,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 
-from security_toolkit.config import ScopeError, load_authorized_target
-from security_toolkit.recon.upload_testing import UploadTestCase, check_upload_case_rate_limiting, run_upload_test_case
+from security_toolkit.config import load_authorized_target_cli
+from security_toolkit.recon.upload_testing import check_upload_case_rate_limiting, load_upload_cases, run_upload_test_case
 from security_toolkit.reporting.cloud_report import upload_report_cli
 from security_toolkit.reporting.report import Finding, build_report
-
-
-def _load_cases(path: str) -> list[UploadTestCase]:
-    with open(path, encoding="utf-8") as handle:
-        data = json.load(handle)
-    return [
-        UploadTestCase(
-            name=item["name"],
-            upload_path=item["upload_path"],
-            method=item.get("method", "post"),
-            file_field_name=item.get("file_field_name", "file"),
-            extra_fields=item.get("extra_fields", {}),
-            response_url_json_path=item.get("response_url_json_path"),
-            uploaded_file_url_template=item.get("uploaded_file_url_template"),
-        )
-        for item in data.get("cases", [])
-    ]
 
 
 def main() -> int:
@@ -48,13 +30,11 @@ def main() -> int:
     parser.add_argument("--skip-rate-limit", action="store_true", help="Skip the automatic rate-limit check per case")
     args = parser.parse_args()
 
-    try:
-        target = load_authorized_target(args.target)
-    except ScopeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    target = load_authorized_target_cli(args.target)
+    if target is None:
         return 1
 
-    cases = _load_cases(args.cases)
+    cases = load_upload_cases(args.cases)
     if not cases:
         print(f"ERROR: no upload cases found in {args.cases}", file=sys.stderr)
         return 1
