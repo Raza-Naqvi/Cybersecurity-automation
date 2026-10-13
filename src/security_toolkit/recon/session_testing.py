@@ -25,6 +25,7 @@ import requests
 
 from security_toolkit.config import Credentials, Target
 from security_toolkit.recon.auth import AuthProvider
+from security_toolkit.recon.rate_limit_check import RateLimitResult, check_rate_limiting
 from security_toolkit.scope_guard import resolve_in_scope_url
 
 
@@ -40,15 +41,6 @@ class SessionFixationResult:
 class LogoutResult:
     before_logout_status: int
     after_logout_status: int
-    flagged: bool
-    detail: str
-
-
-@dataclass(frozen=True)
-class RateLimitResult:
-    attempts: int
-    status_codes: tuple[int, ...]
-    blocked: bool
     flagged: bool
     detail: str
 
@@ -132,27 +124,11 @@ def check_login_rate_limiting(
     — i.e. the login form can be retried indefinitely, which is what
     makes credential-stuffing/brute-force practical.
 
-    Deliberately conservative: it only checks for an explicit 429, since
-    detecting a CAPTCHA or a "too many attempts" page generically isn't
-    reliable without knowing the app. A clean report here doesn't prove
-    there's no lockout — only that this specific signal wasn't seen.
+    Thin wrapper around `rate_limit_check.check_rate_limiting` — the
+    same probe backs the IDOR/injection/upload testers' automatic
+    rate-limit checks, so every endpoint this toolkit touches gets this
+    signal, not just login.
     """
-    if max_attempts <= 0:
-        raise ValueError("max_attempts must be a positive integer")
-
-    status_codes = tuple(
-        provider.login(requests.Session(), bad_credentials).status_code for _ in range(max_attempts)
-    )
-    blocked = 429 in status_codes
-    flagged = not blocked
-    detail = (
-        f"{max_attempts} failed login attempts, status codes seen: {status_codes}. "
-        + (
-            "No HTTP 429 observed — confirm manually whether a CAPTCHA/lockout kicked in another way."
-            if flagged
-            else "HTTP 429 observed — some throttling is in place."
-        )
-    )
-    return RateLimitResult(
-        attempts=max_attempts, status_codes=status_codes, blocked=blocked, flagged=flagged, detail=detail
+    return check_rate_limiting(
+        "login", lambda: provider.login(requests.Session(), bad_credentials), max_attempts=max_attempts
     )

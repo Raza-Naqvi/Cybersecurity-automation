@@ -14,17 +14,13 @@ needs to be configured by hand with `--auth-type json_token`.
 
 from __future__ import annotations
 
-import re
-
 import requests
 
-# Hidden-field names commonly used for CSRF tokens across frameworks.
-CSRF_FIELD_CANDIDATES = (
-    "_token",  # Laravel
-    "csrf_token",
-    "csrfmiddlewaretoken",  # Django
-    "authenticity_token",  # Rails
-    "__requestverificationtoken",  # ASP.NET
+from security_toolkit.recon.html_forms import (
+    CSRF_FIELD_CANDIDATES,
+    FormParsingError,
+    extract_inputs,
+    find_form_with_password_field,
 )
 
 # Field names commonly used for the login identifier, in priority order.
@@ -33,29 +29,6 @@ USERNAME_FIELD_CANDIDATES = ("email", "username", "user_login", "login", "user")
 
 class AuthDetectionError(RuntimeError):
     """Raised when the login page's form couldn't be parsed into an auth block."""
-
-
-def _find_login_form_html(page_html: str) -> str:
-    forms = re.findall(r"<form\b.*?</form>", page_html, re.IGNORECASE | re.DOTALL)
-    for form_html in forms:
-        if re.search(r'<input\b[^>]*type=["\']password["\']', form_html, re.IGNORECASE):
-            return form_html
-    raise AuthDetectionError(
-        "No <form> containing a password field was found on this page — "
-        "it may be a JS-rendered login (not plain HTML) or a JSON API. "
-        "Set up --auth-type json_token or form_session manually instead."
-    )
-
-
-def _extract_inputs(form_html: str) -> list[dict]:
-    inputs = []
-    for tag in re.findall(r"<input\b[^>]*>", form_html, re.IGNORECASE):
-        name_match = re.search(r'name=["\']([^"\']+)["\']', tag, re.IGNORECASE)
-        if not name_match:
-            continue
-        type_match = re.search(r'type=["\']([^"\']+)["\']', tag, re.IGNORECASE)
-        inputs.append({"name": name_match.group(1), "type": (type_match.group(1).lower() if type_match else "text")})
-    return inputs
 
 
 def detect_auth_config(login_url: str, timeout: float = 10.0) -> dict:
@@ -69,8 +42,13 @@ def detect_auth_config(login_url: str, timeout: float = 10.0) -> dict:
     if response.status_code >= 400:
         raise AuthDetectionError(f"GET {login_url} returned status {response.status_code}")
 
-    form_html = _find_login_form_html(response.text)
-    inputs = _extract_inputs(form_html)
+    try:
+        form_html = find_form_with_password_field(response.text)
+    except FormParsingError as exc:
+        raise AuthDetectionError(
+            f"{exc} Set up --auth-type json_token or form_session manually instead."
+        ) from exc
+    inputs = extract_inputs(form_html)
 
     password_field = next((i["name"] for i in inputs if i["type"] == "password"), None)
     if not password_field:

@@ -19,8 +19,9 @@ import json
 import sys
 
 from security_toolkit.config import ScopeError, load_authorized_target
-from security_toolkit.recon.upload_testing import UploadTestCase, run_upload_test_case
-from security_toolkit.reporting.report import Finding, build_report, write_report
+from security_toolkit.recon.upload_testing import UploadTestCase, check_upload_case_rate_limiting, run_upload_test_case
+from security_toolkit.reporting.cloud_report import upload_report_cli
+from security_toolkit.reporting.report import Finding, build_report
 
 
 def _load_cases(path: str) -> list[UploadTestCase]:
@@ -44,6 +45,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, help="Target name from config/scope.json")
     parser.add_argument("--cases", required=True, help="Path to a JSON file of upload test cases")
+    parser.add_argument("--skip-rate-limit", action="store_true", help="Skip the automatic rate-limit check per case")
     args = parser.parse_args()
 
     try:
@@ -68,11 +70,13 @@ def main() -> int:
                     detail=f"filename={result.filename_sent!r}\n{result.detail}",
                 )
             )
+        if not args.skip_rate_limit:
+            rate_result = check_upload_case_rate_limiting(target, case)
+            findings.append(Finding(name=rate_result.label, flagged=rate_result.flagged, detail=rate_result.detail))
 
     report = build_report(title="Upload Test", target=target.name, findings=findings)
-    json_path, html_path = write_report(report)
-
-    print(f"Report written:\n  {json_path}\n  {html_path}")
+    if upload_report_cli(report) is None:
+        return 1
     if report.has_flags:
         print("\n⚠ One or more uploads were flagged — review before reporting as a confirmed finding.")
         return 2

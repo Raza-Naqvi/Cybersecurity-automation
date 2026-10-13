@@ -16,14 +16,16 @@ from __future__ import annotations
 import argparse
 import sys
 
-from security_toolkit.config import Credentials, ScopeError, load_authorized_target, load_credentials_from_env
+from security_toolkit.config import Credentials, ScopeError, load_authorized_target, load_test_credentials
 from security_toolkit.recon.auth import AuthConfigError, AuthFailure, build_auth_provider, login
+from security_toolkit.recon.jwt_testing import check_token_storage_hint
 from security_toolkit.recon.session_testing import (
     check_login_rate_limiting,
     check_logout_invalidation,
     check_session_fixation,
 )
-from security_toolkit.reporting.report import Finding, build_report, write_report
+from security_toolkit.reporting.cloud_report import upload_report_cli
+from security_toolkit.reporting.report import Finding, build_report
 
 
 def main() -> int:
@@ -55,7 +57,7 @@ def main() -> int:
         return 1
 
     try:
-        creds = load_credentials_from_env("IDOR_USER_A")
+        creds = load_test_credentials(target.name, "IDOR_USER_A")
     except ScopeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -66,10 +68,15 @@ def main() -> int:
     findings.append(Finding(name="Session fixation", flagged=fixation.flagged, detail=fixation.detail))
 
     try:
-        session, _ = login(provider, creds)
+        session, login_result = login(provider, creds)
     except AuthFailure as exc:
         print(f"ERROR: login failed — {exc}", file=sys.stderr)
         return 1
+
+    storage_hint = check_token_storage_hint(
+        login_result.set_cookie_headers, token_in_json_body=login_result.token is not None
+    )
+    findings.append(Finding(name="JWT/token storage hint", flagged=storage_hint.flagged, detail=storage_hint.detail))
 
     logout = check_logout_invalidation(
         target, session, args.logout_path, args.protected_path, logout_method=args.logout_method
@@ -82,9 +89,8 @@ def main() -> int:
         findings.append(Finding(name="Login rate limiting", flagged=rate_limit.flagged, detail=rate_limit.detail))
 
     report = build_report(title="Auth/Session Test", target=target.name, findings=findings)
-    json_path, html_path = write_report(report)
-
-    print(f"Report written:\n  {json_path}\n  {html_path}")
+    if upload_report_cli(report) is None:
+        return 1
     return 2 if report.has_flags else 0
 
 

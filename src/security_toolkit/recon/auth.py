@@ -48,6 +48,7 @@ from typing import Any, Protocol
 import requests
 
 from security_toolkit.config import Credentials
+from security_toolkit.json_paths import lookup_dotted_path
 
 
 class AuthConfigError(ValueError):
@@ -63,6 +64,8 @@ class AuthResult:
     logged_in: bool
     status_code: int
     detail: str
+    token: str | None = None  # the extracted bearer token, for json_token logins
+    set_cookie_headers: tuple[str, ...] = ()  # raw Set-Cookie header values from the login response
 
 
 class AuthProvider(Protocol):
@@ -76,13 +79,10 @@ def _require(config: dict, key: str, auth_type: str) -> Any:
 
 
 def _lookup_path(data: dict, dotted_path: str) -> Any:
-    """Resolve "data.token"-style dotted paths against a parsed JSON body."""
-    current: Any = data
-    for part in dotted_path.split("."):
-        if not isinstance(current, dict) or part not in current:
-            raise AuthFailure(f"Login response had no field at path '{dotted_path}'")
-        current = current[part]
-    return current
+    found = lookup_dotted_path(data, dotted_path)
+    if found is None:
+        raise AuthFailure(f"Login response had no field at path '{dotted_path}'")
+    return found
 
 
 def _extract_csrf_token(html: str, field_name: str) -> str:
@@ -138,6 +138,7 @@ class FormSessionAuthProvider:
             logged_in=succeeded,
             status_code=response.status_code,
             detail="login OK" if succeeded else f"login failed (status {response.status_code})",
+            set_cookie_headers=tuple(response.raw.headers.getlist("Set-Cookie")) if response.raw else (),
         )
 
 
@@ -169,7 +170,13 @@ class JsonTokenAuthProvider:
         except (ValueError, AuthFailure) as exc:
             return AuthResult(logged_in=False, status_code=response.status_code, detail=str(exc))
         session.headers[self.header_name] = f"{self.header_prefix}{token}"
-        return AuthResult(logged_in=True, status_code=response.status_code, detail="login OK")
+        return AuthResult(
+            logged_in=True,
+            status_code=response.status_code,
+            detail="login OK",
+            token=str(token),
+            set_cookie_headers=tuple(response.raw.headers.getlist("Set-Cookie")) if response.raw else (),
+        )
 
 
 def wordpress_auth_provider(login_url: str) -> FormSessionAuthProvider:

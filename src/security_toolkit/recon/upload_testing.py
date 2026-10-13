@@ -34,6 +34,8 @@ from typing import Any
 import requests
 
 from security_toolkit.config import Target
+from security_toolkit.json_paths import lookup_dotted_path
+from security_toolkit.recon.rate_limit_check import RateLimitResult, check_rate_limiting
 from security_toolkit.scope_guard import resolve_in_scope_url
 
 
@@ -67,15 +69,6 @@ class UploadFinding:
     executed: bool | None  # None = couldn't check (no URL available)
     flagged: bool
     detail: str
-
-
-def _lookup_json_path(data: dict, dotted_path: str) -> Any:
-    current: Any = data
-    for part in dotted_path.split("."):
-        if not isinstance(current, dict) or part not in current:
-            return None
-        current = current[part]
-    return current
 
 
 def build_upload_payloads(marker: str) -> tuple[UploadPayload, ...]:
@@ -115,7 +108,7 @@ def _resolve_uploaded_file_url(
             body = upload_response.json()
         except ValueError:
             return None
-        found = _lookup_json_path(body, case.response_url_json_path)
+        found = lookup_dotted_path(body, case.response_url_json_path)
         return str(found) if found else None
 
     if case.uploaded_file_url_template:
@@ -177,3 +170,21 @@ def run_upload_test_case(
         )
 
     return tuple(findings)
+
+
+def check_upload_case_rate_limiting(
+    target: Target, case: UploadTestCase, session: requests.Session | None = None, max_attempts: int = 10
+) -> RateLimitResult:
+    """Automatic rate-limit check for an upload endpoint — repeatedly
+    submits one tiny benign file, every endpoint this toolkit probes
+    gets this signal.
+    """
+    url = resolve_in_scope_url(target, case.upload_path)
+    caller = session if session is not None else requests
+    request_fn = getattr(caller, case.method.lower())
+
+    def _send() -> requests.Response:
+        files = {case.file_field_name: ("ratelimittest.txt", b"rate limit probe", "text/plain")}
+        return request_fn(url, files=files, data=case.extra_fields, timeout=10.0)
+
+    return check_rate_limiting(f"{case.name} (rate limit)", _send, max_attempts=max_attempts)

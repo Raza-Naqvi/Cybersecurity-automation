@@ -8,6 +8,7 @@ config/idor_cases/
 config/injection_points/
 config/upload_cases/
 config/business_logic_cases/
+vendor/
 reports/*.html
 reports/*.json
 !reports/.gitkeep

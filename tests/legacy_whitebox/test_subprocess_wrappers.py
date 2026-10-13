@@ -82,7 +82,7 @@ def test_load_db_config_raises_when_env_missing(monkeypatch, tmp_path):
     empty_env = tmp_path / ".env"
     empty_env.write_text("")
     with pytest.raises(ScopeError):
-        load_db_config()
+        load_db_config(dotenv_path=empty_env)
 
 
 def test_load_db_config_builds_from_env(monkeypatch):

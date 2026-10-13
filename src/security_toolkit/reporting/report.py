@@ -1,4 +1,9 @@
-"""Turn a check's findings into a JSON + HTML report under reports/."""
+"""Build a check's findings into a `Report`, and render it to JSON/HTML
+strings. Rendering is pure (no I/O) so it's reusable by both the
+Cloudinary uploader (`cloud_report.py`, the normal path — nothing touches
+local disk) and `write_report` below (kept for tests and anyone who
+wants a local copy).
+"""
 
 from __future__ import annotations
 
@@ -70,39 +75,52 @@ def build_report(title: str, target: str, findings: list[Finding]) -> Report:
     )
 
 
-def _slug(value: str) -> str:
+def slug(value: str) -> str:
     return "".join(ch if ch.isalnum() else "-" for ch in value.lower()).strip("-")
 
 
+def report_base_name(report: Report, stamp: str | None = None) -> str:
+    """The filename stem used for both JSON and HTML renders of a report —
+    shared so a local save and a cloud upload of the same report line up.
+    """
+    stamp = stamp or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{slug(report.title)}_{slug(report.target)}_{stamp}"
+
+
+def render_json(report: Report) -> str:
+    return json.dumps(
+        {
+            "title": report.title,
+            "target": report.target,
+            "generated_at": report.generated_at,
+            "findings": [finding.__dict__ for finding in report.findings],
+        },
+        indent=2,
+    )
+
+
+def render_html(report: Report) -> str:
+    return _HTML_TEMPLATE.render(
+        title=report.title,
+        target=report.target,
+        generated_at=report.generated_at,
+        sections=[finding.__dict__ for finding in report.findings],
+    )
+
+
 def write_report(report: Report, output_dir: Path | None = None) -> tuple[Path, Path]:
-    """Write the report as both JSON and HTML. Returns (json_path, html_path)."""
+    """Write the report as both JSON and HTML to local disk.
+
+    Not used by the normal workflow anymore (see `cloud_report.py`) —
+    kept for tests and for anyone who explicitly wants a local copy.
+    """
     out_dir = output_dir or REPORTS_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    base_name = f"{_slug(report.title)}_{_slug(report.target)}_{stamp}"
+    base_name = report_base_name(report)
 
     json_path = out_dir / f"{base_name}.json"
-    json_path.write_text(
-        json.dumps(
-            {
-                "title": report.title,
-                "target": report.target,
-                "generated_at": report.generated_at,
-                "findings": [finding.__dict__ for finding in report.findings],
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    json_path.write_text(render_json(report), encoding="utf-8")
 
     html_path = out_dir / f"{base_name}.html"
-    html_path.write_text(
-        _HTML_TEMPLATE.render(
-            title=report.title,
-            target=report.target,
-            generated_at=report.generated_at,
-            sections=[finding.__dict__ for finding in report.findings],
-        ),
-        encoding="utf-8",
-    )
+    html_path.write_text(render_html(report), encoding="utf-8")
     return json_path, html_path

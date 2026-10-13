@@ -27,7 +27,8 @@ from security_toolkit.recon.business_logic_testing import (
     check_price_tampering,
     check_rate_limited_action,
 )
-from security_toolkit.reporting.report import Finding, build_report, write_report
+from security_toolkit.reporting.cloud_report import upload_report_cli
+from security_toolkit.reporting.report import Finding, build_report
 
 
 def _load_cases(path: str) -> dict:
@@ -104,9 +105,8 @@ def main() -> int:
         return 1
 
     report = build_report(title="Business Logic Test", target=target.name, findings=findings)
-    json_path, html_path = write_report(report)
-
-    print(f"Report written:\n  {json_path}\n  {html_path}")
+    if upload_report_cli(report) is None:
+        return 1
     if report.has_flags:
         print("\n⚠ One or more checks were flagged — review before reporting as a confirmed finding.")
         return 2

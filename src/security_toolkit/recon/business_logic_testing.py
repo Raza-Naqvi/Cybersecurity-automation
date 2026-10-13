@@ -32,6 +32,7 @@ from typing import Any
 import requests
 
 from security_toolkit.config import Target
+from security_toolkit.recon.rate_limit_check import check_rate_limiting as _check_rate_limiting
 from security_toolkit.scope_guard import resolve_in_scope_url
 
 
@@ -161,24 +162,13 @@ def check_rate_limited_action(
     session: requests.Session | None = None,
     timeout: float = 10.0,
 ) -> BusinessLogicFinding:
-    if max_attempts <= 0:
-        raise ValueError("max_attempts must be a positive integer")
-
-    status_codes = tuple(
-        _send(target, case.path, case.method, case.payload, case.param_location, session, timeout).status_code
-        for _ in range(max_attempts)
+    """Thin wrapper around `rate_limit_check.check_rate_limiting`."""
+    shared = _check_rate_limiting(
+        case.name,
+        lambda: _send(target, case.path, case.method, case.payload, case.param_location, session, timeout),
+        max_attempts=max_attempts,
     )
-    blocked = 429 in status_codes
-    flagged = not blocked
-    detail = (
-        f"{max_attempts} attempts, status codes: {status_codes}. "
-        + (
-            "No HTTP 429 observed — confirm manually whether a CAPTCHA/limit kicked in another way."
-            if flagged
-            else "HTTP 429 observed — throttling is in place."
-        )
-    )
-    return BusinessLogicFinding(case_name=case.name, check="rate_limit", flagged=flagged, detail=detail)
+    return BusinessLogicFinding(case_name=case.name, check="rate_limit", flagged=shared.flagged, detail=shared.detail)
 
 
 def check_forged_webhook(target: Target, case: WebhookForgeryCase, timeout: float = 10.0) -> BusinessLogicFinding:

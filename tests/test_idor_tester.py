@@ -6,6 +6,8 @@ from security_toolkit.config import Target
 from security_toolkit.recon.idor_tester import (
     IdorTestCase,
     OutOfScopeError,
+    check_idor_case_rate_limiting,
+    check_sequential_id_enumeration,
     require_in_scope,
     run_idor_test,
 )
@@ -56,3 +58,49 @@ def test_run_idor_test_passes_when_other_user_denied(staging_target):
     result = run_idor_test(staging_target, session_owner, session_other, case)
 
     assert result.flagged is False
+
+
+def test_check_sequential_id_enumeration_flags_accessible_neighbors(staging_target):
+    session_other = MagicMock()
+    session_other.get.return_value = MagicMock(status_code=200)
+
+    case = IdorTestCase(name="order lookup", url_template="/api/orders/{id}", owner_id="42")
+    result = check_sequential_id_enumeration(staging_target, session_other, case, range_before=2, range_after=2)
+
+    assert result.flagged is True
+    assert result.tested_ids == ("40", "41", "43", "44")
+    assert result.accessible_ids == ("40", "41", "43", "44")
+
+
+def test_check_sequential_id_enumeration_not_flagged_when_neighbors_denied(staging_target):
+    session_other = MagicMock()
+    session_other.get.return_value = MagicMock(status_code=403)
+
+    case = IdorTestCase(name="order lookup", url_template="/api/orders/{id}", owner_id="42")
+    result = check_sequential_id_enumeration(staging_target, session_other, case, range_before=2, range_after=2)
+
+    assert result.flagged is False
+    assert result.accessible_ids == ()
+
+
+def test_check_sequential_id_enumeration_skips_non_integer_ids(staging_target):
+    session_other = MagicMock()
+    case = IdorTestCase(name="order lookup", url_template="/api/orders/{id}", owner_id="not-a-number")
+
+    result = check_sequential_id_enumeration(staging_target, session_other, case)
+
+    assert result.flagged is False
+    assert result.tested_ids == ()
+    assert "skipped" in result.detail
+    session_other.get.assert_not_called()
+
+
+def test_check_idor_case_rate_limiting_flags_when_no_429(staging_target):
+    session = MagicMock()
+    session.get.return_value = MagicMock(status_code=200)
+    case = IdorTestCase(name="order lookup", url_template="/api/orders/{id}", owner_id="42")
+
+    result = check_idor_case_rate_limiting(staging_target, session, case, max_attempts=3)
+
+    assert result.flagged is True
+    assert session.get.call_count == 3

@@ -51,13 +51,15 @@ def load_env(dotenv_path: Path | None = None) -> None:
     load_dotenv(dotenv_path=dotenv_path or (REPO_ROOT / ".env"))
 
 
-def load_db_config() -> DBConfig:
+def load_db_config(dotenv_path: Path | None = None) -> DBConfig:
     """Build DB connection settings from environment variables only.
 
     Never hardcode credentials; this raises if required values are missing
     so a misconfigured run fails fast instead of silently using defaults.
+    `dotenv_path` exists mainly for tests — real callers should rely on
+    the default (the project's own `.env`).
     """
-    load_env()
+    load_env(dotenv_path)
     required = ["DB_HOST", "DB_NAME", "DB_USER"]
     missing = [key for key in required if not os.environ.get(key)]
     if missing:
@@ -80,13 +82,14 @@ class Credentials:
     password: str
 
 
-def load_credentials_from_env(prefix: str) -> Credentials:
+def load_credentials_from_env(prefix: str, dotenv_path: Path | None = None) -> Credentials:
     """Read a {prefix}_USERNAME / {prefix}_PASSWORD pair from the environment.
 
-    Used for the IDOR tester's two test accounts, e.g. prefix="IDOR_USER_A".
-    Never put real credentials in scope.json or in code — only in .env.
+    Superseded by `load_test_credentials` (MongoDB-backed, keyed by
+    target name) for the normal workflow — kept for anyone who wants to
+    hand-supply a one-off credential pair via .env instead.
     """
-    load_env()
+    load_env(dotenv_path)
     username_key, password_key = f"{prefix}_USERNAME", f"{prefix}_PASSWORD"
     username, password = os.environ.get(username_key), os.environ.get(password_key)
     if not username or not password:
@@ -95,6 +98,32 @@ def load_credentials_from_env(prefix: str) -> Credentials:
             "Add them to .env (never to scope.json or source code)."
         )
     return Credentials(username=username, password=password)
+
+
+def load_test_credentials(target_name: str, label: str, uri: str | None = None) -> Credentials:
+    """Read one target's test-account credentials from the local
+    MongoDB credential store (see credentials_db.py).
+
+    Raises ScopeError if nothing is stored for this target+label, or if
+    the credential store itself couldn't be reached (bad MONGODB_URI,
+    auth failure, etc.) — run scripts/doctor.py to check the connection,
+    scripts/provision_test_accounts.py to create accounts automatically,
+    or scripts/manage_credentials.py add to set them by hand.
+    """
+    from security_toolkit.credentials_db import load_credentials as _load_from_db
+
+    try:
+        stored = _load_from_db(target_name, label, uri=uri)
+    except Exception as exc:  # noqa: BLE001 — any Mongo connection/auth failure
+        raise ScopeError(
+            f"Could not reach the MongoDB credential store: {exc}. Run scripts/doctor.py to check MONGODB_URI."
+        ) from exc
+    if stored is None:
+        raise ScopeError(
+            f"No credentials stored for target '{target_name}' label '{label}'. "
+            "Run scripts/provision_test_accounts.py, or scripts/manage_credentials.py add, to set them."
+        )
+    return Credentials(username=stored.username, password=stored.password)
 
 
 def _read_scope_file(scope_path: Path) -> list[dict]:

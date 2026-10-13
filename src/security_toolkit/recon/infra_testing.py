@@ -7,9 +7,13 @@ outdated-software scanning. Both run entirely over the network against
 the target's own public `base_url` — no filesystem, DB, or server-shell
 access needed, consistent with the rest of this toolkit.
 
-Neither tool ships with this repo; install them separately (e.g. `brew
-install testssl nikto`) and point `testssl_bin`/`nikto_bin` at them if
-they're not on PATH.
+At least one of the two is required for this phase — `scripts/doctor.py`
+tries to get both installed, but if only one succeeds (or was already
+present), this still runs with just that one rather than skipping
+entirely. Neither tool is bundled; by default this resolves them via
+PATH first, then a `vendor/` copy doctor.py may have cloned in (see
+`tool_locations.py`) — pass `testssl_cmd`/`nikto_cmd` explicitly to
+override either.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from dataclasses import dataclass
 
 from security_toolkit.config import Target
 from security_toolkit.scope_guard import require_in_scope
+from security_toolkit.tool_locations import resolve_nikto_bin, resolve_testssl_bin
 
 
 @dataclass(frozen=True)
@@ -40,7 +45,7 @@ def _run_tool(args: list[str], timeout: float) -> tuple[bool, str]:
     return result.returncode == 0, output
 
 
-def run_testssl(target: Target, testssl_bin: str = "testssl.sh", timeout: float = 180.0) -> ToolCheckResult:
+def run_testssl(target: Target, testssl_cmd: tuple[str, ...] | None = None, timeout: float = 180.0) -> ToolCheckResult:
     """Run testssl.sh against the target's base_url and flag common
     severity markers in its output (it labels findings itself as
     LOW/MEDIUM/HIGH/CRITICAL).
@@ -49,8 +54,9 @@ def run_testssl(target: Target, testssl_bin: str = "testssl.sh", timeout: float 
         raise RuntimeError(f"Target '{target.name}' has no base_url in scope.json")
     require_in_scope(target.base_url, target)
 
+    cmd = list(testssl_cmd) if testssl_cmd else list(resolve_testssl_bin())
     try:
-        succeeded, output = _run_tool([testssl_bin, "--quiet", "--color", "0", target.base_url], timeout)
+        succeeded, output = _run_tool([*cmd, "--quiet", "--color", "0", target.base_url], timeout)
     except RuntimeError as exc:
         return ToolCheckResult(tool="testssl.sh", succeeded=False, flagged=True, detail=str(exc))
 
@@ -59,7 +65,7 @@ def run_testssl(target: Target, testssl_bin: str = "testssl.sh", timeout: float 
     return ToolCheckResult(tool="testssl.sh", succeeded=succeeded, flagged=flagged, detail=detail)
 
 
-def run_nikto(target: Target, nikto_bin: str = "nikto", timeout: float = 300.0) -> ToolCheckResult:
+def run_nikto(target: Target, nikto_cmd: tuple[str, ...] | None = None, timeout: float = 300.0) -> ToolCheckResult:
     """Run nikto against the target's base_url. Nikto reports findings as
     a flat list of lines starting with '+' — any output beyond its
     banner/summary lines is treated as something worth a human's review.
@@ -68,8 +74,9 @@ def run_nikto(target: Target, nikto_bin: str = "nikto", timeout: float = 300.0) 
         raise RuntimeError(f"Target '{target.name}' has no base_url in scope.json")
     require_in_scope(target.base_url, target)
 
+    cmd = list(nikto_cmd) if nikto_cmd else list(resolve_nikto_bin())
     try:
-        succeeded, output = _run_tool([nikto_bin, "-h", target.base_url, "-ask", "no"], timeout)
+        succeeded, output = _run_tool([*cmd, "-h", target.base_url, "-ask", "no"], timeout)
     except RuntimeError as exc:
         return ToolCheckResult(tool="nikto", succeeded=False, flagged=True, detail=str(exc))
 

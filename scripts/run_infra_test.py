@@ -17,7 +17,8 @@ import sys
 
 from security_toolkit.config import ScopeError, load_authorized_target
 from security_toolkit.recon.infra_testing import run_nikto, run_testssl
-from security_toolkit.reporting.report import Finding, build_report, write_report
+from security_toolkit.reporting.cloud_report import upload_report_cli
+from security_toolkit.reporting.report import Finding, build_report
 
 
 def main() -> int:
@@ -25,8 +26,8 @@ def main() -> int:
     parser.add_argument("--target", required=True, help="Target name from config/scope.json")
     parser.add_argument("--skip-testssl", action="store_true")
     parser.add_argument("--skip-nikto", action="store_true")
-    parser.add_argument("--testssl-bin", default="testssl.sh")
-    parser.add_argument("--nikto-bin", default="nikto")
+    parser.add_argument("--testssl-bin", help="Override the resolved testssl.sh command (PATH/vendor/ auto-detected otherwise)")
+    parser.add_argument("--nikto-bin", help="Override the resolved nikto command (PATH/vendor/ auto-detected otherwise)")
     args = parser.parse_args()
 
     try:
@@ -43,14 +44,16 @@ def main() -> int:
 
     if not args.skip_testssl:
         try:
-            result = run_testssl(target, testssl_bin=args.testssl_bin)
+            testssl_cmd = (args.testssl_bin,) if args.testssl_bin else None
+            result = run_testssl(target, testssl_cmd=testssl_cmd)
             findings.append(Finding(name="testssl.sh (TLS/cert checks)", flagged=result.flagged, detail=result.detail))
         except RuntimeError as exc:
             findings.append(Finding(name="testssl.sh (TLS/cert checks)", flagged=True, detail=f"check skipped: {exc}"))
 
     if not args.skip_nikto:
         try:
-            result = run_nikto(target, nikto_bin=args.nikto_bin)
+            nikto_cmd = (args.nikto_bin,) if args.nikto_bin else None
+            result = run_nikto(target, nikto_cmd=nikto_cmd)
             findings.append(Finding(name="nikto (server misconfiguration)", flagged=result.flagged, detail=result.detail))
         except RuntimeError as exc:
             findings.append(Finding(name="nikto (server misconfiguration)", flagged=True, detail=f"check skipped: {exc}"))
@@ -60,9 +63,8 @@ def main() -> int:
         return 1
 
     report = build_report(title="Infra Test", target=target.name, findings=findings)
-    json_path, html_path = write_report(report)
-
-    print(f"Report written:\n  {json_path}\n  {html_path}")
+    if upload_report_cli(report) is None:
+        return 1
     return 2 if report.has_flags else 0
 
 

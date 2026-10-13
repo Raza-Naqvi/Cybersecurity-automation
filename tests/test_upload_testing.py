@@ -6,6 +6,7 @@ from security_toolkit.config import Target
 from security_toolkit.recon.upload_testing import (
     UploadTestCase,
     build_upload_payloads,
+    check_upload_case_rate_limiting,
     run_upload_test_case,
 )
 
@@ -116,3 +117,18 @@ def test_run_upload_test_case_uses_url_template(target):
 
     called_url = mock_get.call_args.args[0]
     assert called_url.startswith("https://staging.example.com/wp-content/uploads/")
+
+
+def test_check_upload_case_rate_limiting_flags_when_no_429(target):
+    case = UploadTestCase(name="avatar upload", upload_path="/upload")
+    with patch("requests.post", return_value=MagicMock(status_code=201)) as mock_post:
+        result = check_upload_case_rate_limiting(target, case, max_attempts=3)
+    assert mock_post.call_count == 3
+    assert result.flagged is True
+
+
+def test_check_upload_case_rate_limiting_not_flagged_when_429_seen(target):
+    case = UploadTestCase(name="avatar upload", upload_path="/upload")
+    with patch("requests.post", return_value=MagicMock(status_code=429)):
+        result = check_upload_case_rate_limiting(case=case, target=target, max_attempts=2)
+    assert result.flagged is False

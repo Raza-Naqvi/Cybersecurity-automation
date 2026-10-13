@@ -39,7 +39,7 @@ def test_run_testssl_clean_output_not_flagged(target):
 
 def test_run_testssl_missing_binary_raises_result_flagged(target):
     with patch("subprocess.run", side_effect=FileNotFoundError):
-        result = run_testssl(target, testssl_bin="testssl-missing")
+        result = run_testssl(target, testssl_cmd=("testssl-missing",))
 
     assert result.flagged is True
     assert "not found" in result.detail
@@ -89,7 +89,7 @@ def test_run_nikto_no_findings_not_flagged(target):
 
 def test_run_nikto_missing_binary_raises_result_flagged(target):
     with patch("subprocess.run", side_effect=FileNotFoundError):
-        result = run_nikto(target, nikto_bin="nikto-missing")
+        result = run_nikto(target, nikto_cmd=("nikto-missing",))
 
     assert result.flagged is True
     assert "not found" in result.detail

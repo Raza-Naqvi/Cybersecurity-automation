@@ -70,6 +70,14 @@ as intended. Add the target first with `manage_scope.py add`.
 
 ## Setup
 
+Nothing persists locally except this repo and `.env` — reports go to
+Cloudinary, test-account credentials go to MongoDB, scope config is the
+only thing that's a local file (and it's gitignored). That's deliberate:
+clone this repo on any machine, fill in `.env`, and you're back where
+you left off, since the actual state lives in Mongo/Cloudinary, not on
+disk. See `docs/RUNBOOK.md` for the bare command list; here's the same
+thing explained:
+
 ```bash
 git clone <this-repo>
 cd security-toolkit
@@ -78,13 +86,46 @@ source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .          # makes `security_toolkit` importable by scripts/ and tests/
 
-cp config/scope.example.json config/scope.json   # then edit it — see above
-cp .env.example .env                              # then fill in real test-account creds
+cp .env.example .env
+# edit .env: MONGODB_URI (local or your own Atlas cluster) and
+# CLOUDINARY_URL (from your Cloudinary dashboard's "API Environment variable")
+
+python scripts/doctor.py
+# checks everything's installed/configured and fixes what it can itself
+# (pip packages, testssl.sh/nikto). Run this first on any new machine.
 ```
 
-Never commit `.env` or `scope.json`.
+Then add your target — see **Authorization model** above — with
+`scripts/manage_scope.py add`, and you're ready for **Running the
+checks** below. Never commit `.env` or `config/scope.json`.
 
-## Running the checks
+## Running everything at once (the normal way to use this)
+
+```bash
+python scripts/run_all_tests.py --target <name> \
+  --register-url https://.../register \
+  --protected-path /dashboard --logout-path /logout
+```
+
+This is the one command you'll run day-to-day per target. It figures
+out everything up front — does this target already have test accounts?
+which case files exist? — and asks its one possible question (permission
+to create two real accounts on the live site, if none exist yet and you
+gave a `--register-url`) immediately, before anything runs. Pass `--yes`
+to skip that prompt for fully hands-off runs. After that it runs
+straight through with no further prompts: account creation (if needed)
+→ recon → auth/session → IDOR → injection → SSRF → upload →
+business-logic → infra → a consolidated findings draft, skipping
+whichever checks aren't set up yet and saying exactly why, then prints
+one consolidated summary with every report's link. (The JWT tester isn't
+included here — it needs a manually-captured token, so it stays a
+separate command; see below.)
+
+Drop `--register-url`/`--protected-path`/`--logout-path` if you don't
+have them yet (invite-only site, or haven't found the right paths) —
+it just skips those specific checks and runs everything else.
+
+## Running checks individually
 
 **Recon** (Phase 4.2 of the playbook — run this first on any new target,
 to map the attack surface before anything else):
@@ -124,29 +165,33 @@ automated across a list of endpoints). Different sites log in differently
 differently — so this is config-driven instead of one hardcoded flow. Set
 it up once per target:
 
-1. **Get two disposable test accounts** on staging (Phase 4.1 — User A
+1. **Set up MongoDB once** — the toolkit's own credential store (never
+   the target app's DB). Point `MONGODB_URI` in `.env` at either a local
+   instance (default `mongodb://localhost:27017`) or your own private
+   Atlas cluster (`mongodb+srv://user:pass@cluster-host/...` — needs
+   `dnspython`, already in `requirements.txt`). Never a shared/production
+   cluster.
+
+2. **Get two disposable test accounts** on staging (Phase 4.1 — User A
    and User B, each with some fake data of their own: an order, a
-   profile, a message):
+   profile, a message), stored keyed by target name so every site's test
+   accounts coexist (no more overwriting one flat `.env` per target):
    - **If the site has open/public self-serve signup** (common on
-     Laravel/Node apps, sometimes WordPress): automatable —
-     ```python
-     from security_toolkit.recon.provision import register_via_api
-     register_via_api("https://staging-app.example.com/register", {"email": "idor-a@test.local", "password": "...", "name": "IDOR User A"})
+     Laravel/Node apps, sometimes WordPress): fully automated —
+     ```bash
+     python scripts/provision_test_accounts.py --target example-staging --register-url https://staging-app.example.com/register
      ```
+     It auto-detects the registration form (same approach as the login
+     auto-detect below), creates both accounts, and saves their
+     credentials into MongoDB for this target.
    - **If signup is invite-only or admin-created** (most apps): not
      automatable from outside the app, by definition of black-box. Ask
-     the dev team to create the two accounts for you — without sharing
-     any code or server access back, just the two sets of credentials —
-     then move on to step 2.
-
-2. **Store their credentials in `.env`** — never in `scope.json`, never in
-   code:
-   ```
-   IDOR_USER_A_USERNAME=idor_user_a
-   IDOR_USER_A_PASSWORD=...
-   IDOR_USER_B_USERNAME=idor_user_b
-   IDOR_USER_B_PASSWORD=...
-   ```
+     the dev team for the two accounts' credentials (never code or
+     server access), then store them:
+     ```bash
+     python scripts/manage_credentials.py add --target example-staging --label IDOR_USER_A
+     python scripts/manage_credentials.py add --target example-staging --label IDOR_USER_B
+     ```
 
 3. **Add an `auth` block to that target** in `config/scope.json` — pick
    the adapter that matches the site (see
@@ -197,6 +242,46 @@ human to confirm, not a final verdict** — especially a flagged SQLi
 result, re-check manually (or with `sqlmap`, per the playbook's tool
 list) before reporting it as a confirmed finding. All payloads are
 read-only in intent — nothing here tries to `DROP`/`UPDATE`/`DELETE`.
+Also runs a command/template-injection sweep on the same parameter
+(`{{7*7}}`, `${7*7}`, etc.) — flags if the evaluated result (`49`) shows
+up instead of the literal payload. An automatic rate-limit check runs
+per point too, same signal the auth tester uses for login.
+
+**SSRF tester** (Phase 4.5 — out-of-band confirmation). Reuses the same
+`config/injection_points/<target-name>.json` file — point it at anything
+where the server fetches a URL on your behalf (webhooks, image proxy,
+PDF export, link previews):
+
+```bash
+python scripts/run_ssrf_test.py --target example-staging --points config/injection_points/example-staging.json
+```
+
+Sends a fresh, disposable [webhook.site](https://webhook.site) callback
+URL as the parameter's value, then polls that service for whether the
+target's server actually made an outbound request to it. A flagged
+result here is a **confirmed** SSRF — the server really did reach
+out — not a guess from timing or response content. (webhook.site over
+something like `interactsh`: same confirmed-hit outcome, but a plain
+REST API instead of a Go binary/DNS-crypto protocol to get wrong.)
+
+**JWT tester** (Phase 4.3 — `jwt_tool`-style tampering, no browser or
+external binary). Capture a token from a browser's dev tools / Burp /
+the `Authorization` header after logging in manually:
+
+```bash
+python scripts/run_jwt_test.py --target example-staging --token eyJ... --protected-path /account
+```
+
+Checks: missing `exp`/`iss`/`aud` claims; `alg: none` bypass (strip the
+signature, resubmit); weak-secret HS256 brute force against a small
+built-in wordlist (confirmed by cryptography alone, no server round-trip
+needed); RS256→HS256 confusion if you pass `--public-key-file` (from a
+JWKS endpoint found during recon). The **storage hint** — whether the
+token is likely headed for localStorage — runs automatically as part of
+`run_auth_test.py` instead, since that script already performs the login
+and can read the raw `Set-Cookie` headers: a JWT-shaped cookie missing
+`HttpOnly`, or a token returned only in the JSON body with no cookie at
+all, both get flagged without needing a headless browser.
 
 **Upload tester** (Phase 4.6 — extension bypass, content-type spoofing, a
 GIF/PHP polyglot, and a path-traversal filename). Copy
@@ -257,10 +342,32 @@ general server misconfiguration and outdated software, flagged if it
 reports any findings. Both run entirely over the network against the
 target's `base_url`. Use `--skip-testssl`/`--skip-nikto` to run just one.
 
-Reports from every CLI script land in `reports/` as both `.json` and
-`.html` (gitignored — they can contain sensitive findings; share them
-with the dev team at the end of the engagement, per the deal, rather than
-piecemeal).
+Every report uploads straight to Cloudinary as JSON + HTML — nothing is
+written to local disk, ever, so there's no `reports/` folder to worry
+about leaving sensitive findings in on whatever machine you're using.
+Each upload is also indexed in MongoDB (target, title, timestamp, both
+URLs, whether it was flagged, and the full findings list) — see
+`report_index.py` — so the planned dashboard can list every report from
+every machine with one query, and so the findings draft below doesn't
+need to re-fetch anything from Cloudinary.
+
+**Generating a findings draft** (Phase 4.10 — "document every finding").
+Run this once you've run whatever scans you want included:
+
+```bash
+python scripts/generate_findings_report.py --target example-staging
+python scripts/generate_findings_report.py --target example-staging --upload  # also puts a copy on Cloudinary
+```
+
+Pulls every flagged finding on record for the target from MongoDB and
+writes one consolidated Markdown draft, grouped by scan type, with the
+reproduction detail each check already captured and blank Impact/Fix
+fields. This automates the *aggregation* only — read the whole draft
+once, fill in impact/fix/priority, and only then is it ready to send to
+the dev team; nothing here sends it anywhere on its own.
+
+Share the links with the dev team at the end of the engagement, per the
+deal, rather than piecemeal.
 
 ## Legacy (white-box only — not used under the current engagement)
 
@@ -279,26 +386,41 @@ prints a loud warning; don't use it under the current deal.
 security-toolkit/
 ├── CLAUDE.md                        # Context/instructions for Claude Code — read alongside this file
 ├── README.md                        # This file
-├── docs/security-playbook.md        # The source playbook every check here automates a piece of
+├── docs/
+│   ├── security-playbook.md         # The source playbook every check here automates a piece of
+│   └── RUNBOOK.md                   # Just the commands, in order — no explanations
 ├── config/
-│   ├── scope.example.json           # Template — copy to scope.json (gitignored) and fill in
+│   ├── scope.example.json           # Template for config/scope.json (gitignored) — or just use manage_scope.py
 │   ├── scope.json                   # (gitignored) your real authorized-target list
 │   ├── idor_cases.example.json      # Template — copy per target, list endpoints to IDOR-test
 │   ├── injection_points.example.json # Template — copy per target, list parameters to probe
 │   ├── upload_cases.example.json     # Template — copy per target, list upload endpoints to probe
 │   └── business_logic_cases.example.json # Template — copy per target, list price/coupon/webhook cases
-├── .env.example                     # Template — copy to .env (gitignored) for test-account creds
+├── .env.example                     # Template — copy to .env (gitignored): MONGODB_URI, CLOUDINARY_URL, legacy fallbacks
+├── vendor/                           # (gitignored) testssl.sh/nikto, if doctor.py cloned them here
 ├── src/security_toolkit/
 │   ├── config.py                    # Authorization gate + env loading — every check goes through this
 │   ├── scope_guard.py                # Shared "never request outside base_url" check
 │   ├── scope_manager.py              # Add/list/remove-target logic behind scripts/manage_scope.py
+│   ├── credentials_db.py             # MongoDB-backed test-account credential store, keyed by target+label
+│   ├── report_index.py               # MongoDB index of every report ever uploaded — for the planned dashboard
+│   ├── doctor_checks.py              # Pure logic behind scripts/doctor.py (OS/package-manager detection, checks)
+│   ├── tool_locations.py             # Resolves testssl.sh/nikto: PATH first, then a vendor/ fallback
+│   ├── orchestrator.py               # Pure "what to run/skip and why" logic behind scripts/run_all_tests.py
+│   ├── findings_report.py            # Phase 4.10: aggregates flagged findings into one consolidated Markdown draft
+│   ├── env_file.py                   # Merge-in-place .env updates (legacy credential path only)
 │   ├── recon/                        # Black-box modules — HTTP(S) only, the normal workflow
 │   │   ├── fingerprint.py            # Phase 4.2: recon — exposed files, tech fingerprint, xmlrpc, robots.txt
+│   │   ├── html_forms.py             # Shared HTML <form> parsing for login/register auto-detection
 │   │   ├── auth.py                   # Pluggable login adapters (WordPress/Laravel/JSON-token/custom)
-│   │   ├── provision.py              # Creates IDOR test accounts via a site's own public signup
+│   │   ├── auth_detect.py            # Auto-detects a login form's fields -> an `auth` block
+│   │   ├── provision.py              # Creates IDOR test accounts via a site's own public signup (auto-detected form or JSON API)
+│   │   ├── rate_limit_check.py       # Shared rate-limit probe, wired automatically into IDOR/injection/upload
 │   │   ├── session_testing.py        # Phase 4.3: session fixation, logout invalidation, login rate-limiting
-│   │   ├── idor_tester.py            # Phase 4.4: two-account IDOR testing
-│   │   ├── injection_testing.py      # Phase 4.5: SQLi/NoSQLi/XSS payload sweeps
+│   │   ├── jwt_testing.py            # Phase 4.3: JWT tampering (claims, alg=none, weak secret, RS256->HS256, storage hint)
+│   │   ├── idor_tester.py            # Phase 4.4: two-account IDOR testing + sequential-ID enumeration
+│   │   ├── injection_testing.py      # Phase 4.5: SQLi/NoSQLi/XSS/template-injection payload sweeps
+│   │   ├── ssrf_testing.py           # Phase 4.5: SSRF via webhook.site out-of-band callback confirmation
 │   │   ├── upload_testing.py         # Phase 4.6: file-upload testing (extension/content-type/polyglot)
 │   │   ├── business_logic_testing.py # Phase 4.7: price tamper, coupon reuse, rate limiting, forged webhooks
 │   │   └── infra_testing.py          # Phase 4.8: wraps testssl.sh + nikto
@@ -307,18 +429,25 @@ security-toolkit/
 │   │   ├── monthly_checklist.py
 │   │   └── provision.py
 │   └── reporting/
-│       └── report.py                 # Findings -> JSON + HTML report
+│       ├── report.py                 # Build a Report + render it to JSON/HTML strings (pure, no I/O)
+│       └── cloud_report.py           # Uploads a rendered report to Cloudinary + indexes it in MongoDB
 ├── scripts/
+│   ├── doctor.py                      # Checks + auto-fixes this machine's setup — run first, any machine
 │   ├── manage_scope.py                # Add/list/remove targets in scope.json — no manual JSON editing
+│   ├── provision_test_accounts.py    # Auto-creates the two IDOR/auth test accounts, saves creds to MongoDB
+│   ├── manage_credentials.py         # Add/list/remove test-account credentials in MongoDB by hand
+│   ├── run_all_tests.py              # Runs every check for one target in a single command — the normal way to use this
 │   ├── run_recon.py                  # CLI entrypoint (black-box)
 │   ├── run_auth_test.py              # CLI entrypoint (black-box)
 │   ├── run_idor_test.py              # CLI entrypoint (black-box)
 │   ├── run_injection_test.py         # CLI entrypoint (black-box)
 │   ├── run_upload_test.py            # CLI entrypoint (black-box)
 │   ├── run_business_logic_test.py    # CLI entrypoint (black-box)
+│   ├── run_ssrf_test.py              # CLI entrypoint (black-box)
+│   ├── run_jwt_test.py               # CLI entrypoint (black-box, needs a captured token)
 │   ├── run_infra_test.py             # CLI entrypoint (black-box)
+│   ├── generate_findings_report.py   # Aggregates flagged findings into one consolidated draft
 │   └── legacy_whitebox/              # NOT used currently, see above
-├── reports/                          # (gitignored output) generated reports land here
 └── tests/                            # Mirrors src/security_toolkit/ structure, one test file per module
 ```
 

@@ -15,7 +15,8 @@ import sys
 
 from security_toolkit.config import ScopeError, load_authorized_target
 from security_toolkit.recon import fingerprint
-from security_toolkit.reporting.report import Finding, build_report, write_report
+from security_toolkit.reporting.cloud_report import upload_report_cli
+from security_toolkit.reporting.report import Finding, build_report
 
 
 def main() -> int:
@@ -82,8 +83,8 @@ def main() -> int:
     )
 
     report = build_report(title="Recon", target=target.name, findings=findings)
-    json_path, html_path = write_report(report)
-    print(f"Report written:\n  {json_path}\n  {html_path}")
+    if upload_report_cli(report) is None:
+        return 1
     return 2 if report.has_flags else 0
 
 

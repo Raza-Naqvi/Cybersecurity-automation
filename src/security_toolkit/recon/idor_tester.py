@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import requests
 
 from security_toolkit.config import Target
+from security_toolkit.recon.rate_limit_check import RateLimitResult, check_rate_limiting_for_url
 from security_toolkit.scope_guard import OutOfScopeError, require_in_scope, resolve_in_scope_url
 
 __all__ = [
@@ -24,8 +25,11 @@ __all__ = [
     "require_in_scope",
     "IdorTestCase",
     "IdorResult",
+    "SequentialEnumerationResult",
     "run_idor_test",
     "run_idor_suite",
+    "check_sequential_id_enumeration",
+    "check_idor_case_rate_limiting",
 ]
 
 
@@ -96,3 +100,80 @@ def run_idor_suite(
     return tuple(
         run_idor_test(target, session_owner, session_other, case) for case in test_cases
     )
+
+
+@dataclass(frozen=True)
+class SequentialEnumerationResult:
+    name: str
+    tested_ids: tuple[str, ...]
+    accessible_ids: tuple[str, ...]
+    flagged: bool
+    detail: str
+
+
+def check_sequential_id_enumeration(
+    target: Target,
+    session_other: requests.Session,
+    test_case: IdorTestCase,
+    range_before: int = 3,
+    range_after: int = 3,
+    timeout: float = 10.0,
+) -> SequentialEnumerationResult:
+    """Only meaningful when `owner_id` is a plain integer. Tries nearby
+    IDs (excluding the owner_id itself, already covered by the IDOR
+    check) as the other user's session — confirms the playbook's note
+    that a sequential-ID IDOR is worse than a one-off: if several nearby
+    IDs are all accessible, the whole dataset is walkable, not just one
+    accidentally-shared ID.
+    """
+    try:
+        base_id = int(test_case.owner_id)
+    except ValueError:
+        return SequentialEnumerationResult(
+            name=test_case.name,
+            tested_ids=(),
+            accessible_ids=(),
+            flagged=False,
+            detail=f"owner_id {test_case.owner_id!r} isn't a plain integer — sequential enumeration check skipped.",
+        )
+
+    candidate_ids = tuple(
+        str(base_id + offset) for offset in range(-range_before, range_after + 1) if offset != 0
+    )
+    accessible = []
+    for candidate_id in candidate_ids:
+        url = _resolve_url(target, test_case.url_template, candidate_id)
+        response = session_other.get(url, timeout=timeout)
+        if 200 <= response.status_code < 300:
+            accessible.append(candidate_id)
+
+    flagged = len(accessible) > 0
+    detail = (
+        f"Tested nearby IDs {candidate_ids}. "
+        + (
+            f"FLAGGED: {len(accessible)} nearby ID(s) were also accessible {tuple(accessible)} — "
+            "the dataset looks sequentially walkable, not just one accidentally-shared ID."
+            if flagged
+            else "None of the nearby IDs were accessible."
+        )
+    )
+    return SequentialEnumerationResult(
+        name=test_case.name,
+        tested_ids=candidate_ids,
+        accessible_ids=tuple(accessible),
+        flagged=flagged,
+        detail=detail,
+    )
+
+
+def check_idor_case_rate_limiting(
+    target: Target,
+    session: requests.Session,
+    test_case: IdorTestCase,
+    max_attempts: int = 10,
+) -> RateLimitResult:
+    """Automatic rate-limit check for an IDOR case's endpoint — every
+    endpoint this toolkit probes also gets this signal, not just login.
+    """
+    url = _resolve_url(target, test_case.url_template, test_case.owner_id)
+    return check_rate_limiting_for_url(f"{test_case.name} (rate limit)", url, session=session, max_attempts=max_attempts)
