@@ -72,6 +72,25 @@ def test_run_dirsearch_passes_targets_base_url_and_extensions(target, tmp_path):
     assert args[args.index("-u") + 1] == "https://staging.example.com"
     assert "-e" in args
     assert args[args.index("-e") + 1] == "php,env"
+    assert "-O" in args
+    assert args[args.index("-O") + 1] == "plain"
+
+
+def test_run_dirsearch_nonzero_exit_is_flagged_not_treated_as_clean(target, tmp_path):
+    """A CLI-usage error (wrong flag, wrong version, a crash) must never
+    be silently read as "dirsearch found nothing" — that would hide a
+    broken invocation behind a false all-clear.
+    """
+    output_path = tmp_path / "never_written.txt"
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=2, stdout="", stderr="dirsearch: error: no such option: --format")
+        result = run_dirsearch(target, output_path=output_path)
+
+    assert result.succeeded is False
+    assert result.flagged is True
+    assert result.found_paths == ()
+    assert "exited with status 2" in result.detail
+    assert "no such option" in result.detail
 
 
 def test_run_dirsearch_missing_binary_flagged(target, tmp_path):

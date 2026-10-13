@@ -25,8 +25,8 @@ from security_toolkit.tool_locations import resolve_dirsearch_bin
 
 DEFAULT_EXTENSIONS = "php,env,txt,log,sql,zip,git"
 
-# dirsearch's `--format plain` output is one "<status> <size> <url>" line
-# per found path.
+# dirsearch's `-O plain` output is one "<status> <size> <url>" line per
+# found path.
 _FOUND_LINE = re.compile(r"^\s*\d{3}\s+\S+\s+(\S+)")
 
 
@@ -51,9 +51,11 @@ def run_dirsearch(
 
     `output_path` exists mainly for tests — real callers should rely on
     the default (a throwaway temp file). Parsing dirsearch's output is a
-    best-effort match on its `--format plain` shape; confirm against
-    your installed dirsearch version if nothing shows up but you
-    expected it to.
+    best-effort match on its `-O plain` shape; confirm against your
+    installed dirsearch version if nothing shows up but you expected it
+    to. A non-zero exit is always flagged — never silently read as "no
+    findings," since that would hide a broken invocation (wrong flags,
+    wrong dirsearch version, a crash) behind a false "all clear."
     """
     if not target.base_url:
         raise RuntimeError(f"Target '{target.name}' has no base_url in scope.json")
@@ -65,7 +67,7 @@ def run_dirsearch(
         resolved_output_path = output_path or (Path(tmp) / "dirsearch_output.txt")
         try:
             result = subprocess.run(
-                [*cmd, "-u", target.base_url, "-e", extensions, "--format", "plain", "-o", str(resolved_output_path)],
+                [*cmd, "-u", target.base_url, "-e", extensions, "-O", "plain", "-o", str(resolved_output_path)],
                 capture_output=True, text=True, timeout=timeout, check=False,
             )
         except FileNotFoundError as exc:
@@ -77,6 +79,13 @@ def run_dirsearch(
             return DirEnumResult(
                 tool="dirsearch", succeeded=False, flagged=True, found_paths=(),
                 detail=f"dirsearch timed out after {timeout}s",
+            )
+
+        if result.returncode != 0:
+            output = ((result.stdout or "") + (result.stderr or "")).strip()
+            return DirEnumResult(
+                tool="dirsearch", succeeded=False, flagged=True, found_paths=(),
+                detail=f"dirsearch exited with status {result.returncode} — check the invocation/version:\n{output[:2000]}",
             )
 
         found_paths = ()
@@ -93,4 +102,4 @@ def run_dirsearch(
         if flagged
         else "dirsearch found no additional paths beyond 404."
     )
-    return DirEnumResult(tool="dirsearch", succeeded=result.returncode == 0, flagged=flagged, found_paths=found_paths, detail=detail)
+    return DirEnumResult(tool="dirsearch", succeeded=True, flagged=flagged, found_paths=found_paths, detail=detail)
