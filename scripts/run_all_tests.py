@@ -24,9 +24,10 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
-from security_toolkit.config import REPO_ROOT, ScopeError, load_authorized_target
+from security_toolkit.config import REPO_ROOT, load_authorized_target_cli
 from security_toolkit.credentials_db import load_credentials
 from security_toolkit.orchestrator import RunPlan, plan_run
 
@@ -77,10 +78,8 @@ def main() -> int:
     parser.add_argument("--yes", action="store_true", help="Answer the account-creation confirmation yes automatically")
     args = parser.parse_args()
 
-    try:
-        target = load_authorized_target(args.target)
-    except ScopeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    target = load_authorized_target_cli(args.target)
+    if target is None:
         return 1
 
     try:
@@ -124,16 +123,15 @@ def main() -> int:
         )
         if exit_codes["account creation"] != 0:
             print("Account creation failed — auth/session and IDOR tests will be skipped for this run.")
-            plan = RunPlan(
-                create_accounts=plan.create_accounts,
+            plan = replace(
+                plan,
                 run_auth_session=False,
                 run_idor=False,
-                run_injection=plan.run_injection,
-                run_ssrf=plan.run_ssrf,
-                run_upload=plan.run_upload,
-                run_business_logic=plan.run_business_logic,
-                run_infra=plan.run_infra,
-                skip_reasons={**plan.skip_reasons, "auth/session test": "account creation failed", "IDOR test": "account creation failed"},
+                skip_reasons={
+                    **plan.skip_reasons,
+                    "auth/session test": "account creation failed",
+                    "IDOR test": "account creation failed",
+                },
             )
 
     exit_codes["recon"] = _run_script("run_recon.py", ["--target", target.name])

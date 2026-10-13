@@ -29,6 +29,13 @@ class RunPlan:
         return self.create_accounts
 
 
+def _gate(enabled: bool, label: str, reason: str, skip_reasons: dict[str, str]) -> bool:
+    """Record why `label` is being skipped when `enabled` is False."""
+    if not enabled:
+        skip_reasons[label] = reason
+    return enabled
+
+
 def plan_run(
     has_credentials: bool,
     register_url: str | None,
@@ -58,23 +65,24 @@ def plan_run(
     elif not run_idor:
         skip_reasons["IDOR test"] = f"no {idor_cases_path} found"
 
-    run_injection = injection_points_path is not None and injection_points_path.exists()
-    if not run_injection:
-        skip_reasons["injection test"] = f"no {injection_points_path} found"
+    run_injection = _gate(
+        injection_points_path is not None and injection_points_path.exists(),
+        "injection test", f"no {injection_points_path} found", skip_reasons,
+    )
 
     # SSRF reuses the same injection-points config (same shape: a path +
     # parameter to probe) — no separate setup needed.
-    run_ssrf = run_injection
-    if not run_ssrf:
-        skip_reasons["SSRF test"] = f"no {injection_points_path} found"
+    run_ssrf = _gate(run_injection, "SSRF test", f"no {injection_points_path} found", skip_reasons)
 
-    run_upload = upload_cases_path is not None and upload_cases_path.exists()
-    if not run_upload:
-        skip_reasons["upload test"] = f"no {upload_cases_path} found"
+    run_upload = _gate(
+        upload_cases_path is not None and upload_cases_path.exists(),
+        "upload test", f"no {upload_cases_path} found", skip_reasons,
+    )
 
-    run_business_logic = business_logic_cases_path is not None and business_logic_cases_path.exists()
-    if not run_business_logic:
-        skip_reasons["business logic test"] = f"no {business_logic_cases_path} found"
+    run_business_logic = _gate(
+        business_logic_cases_path is not None and business_logic_cases_path.exists(),
+        "business logic test", f"no {business_logic_cases_path} found", skip_reasons,
+    )
 
     return RunPlan(
         create_accounts=create_accounts,

@@ -25,7 +25,7 @@ import argparse
 import secrets
 import sys
 
-from security_toolkit.config import ScopeError, load_authorized_target
+from security_toolkit.config import load_authorized_target_cli
 from security_toolkit.credentials_db import save_credentials
 from security_toolkit.recon.provision import register_via_form
 from security_toolkit.scope_guard import OutOfScopeError, require_in_scope
@@ -45,10 +45,8 @@ def main() -> int:
     parser.add_argument("--yes", action="store_true", help="Skip the confirmation prompt (for scripted use)")
     args = parser.parse_args()
 
-    try:
-        target = load_authorized_target(args.target)
-    except ScopeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    target = load_authorized_target_cli(args.target)
+    if target is None:
         return 1
 
     try:

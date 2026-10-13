@@ -12,6 +12,7 @@ Every URL this module hits must start with the authorized target's
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 import requests
@@ -26,6 +27,7 @@ __all__ = [
     "IdorTestCase",
     "IdorResult",
     "SequentialEnumerationResult",
+    "load_idor_cases",
     "run_idor_test",
     "run_idor_suite",
     "check_sequential_id_enumeration",
@@ -39,6 +41,19 @@ class IdorTestCase:
     url_template: str  # must contain "{id}", e.g. "/api/orders/{id}"
     owner_id: str  # an ID that belongs to session_a (the resource's real owner)
     allow_mutations: bool = False  # True only to test PATCH/DELETE, not just GET
+
+
+def load_idor_cases(path: str) -> list[IdorTestCase]:
+    """Load a list of `IdorTestCase`s from a JSON file shaped like
+    `config/idor_cases.example.json` — kept next to the dataclass it
+    builds, same pattern as `injection_testing.load_injection_points`.
+    """
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    return [
+        IdorTestCase(name=item["name"], url_template=item["url_template"], owner_id=item["owner_id"])
+        for item in data.get("cases", [])
+    ]
 
 
 @dataclass(frozen=True)

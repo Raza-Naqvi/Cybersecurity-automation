@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from security_toolkit.config import ScopeError, load_authorized_target
+from security_toolkit.config import load_authorized_target_cli
 from security_toolkit.recon.injection_testing import load_injection_points
 from security_toolkit.recon.ssrf_testing import CallbackServiceError, check_ssrf
 from security_toolkit.reporting.cloud_report import upload_report_cli
@@ -34,10 +34,8 @@ def main() -> int:
     parser.add_argument("--max-wait", type=float, default=20.0, help="Seconds to wait for a callback per point")
     args = parser.parse_args()
 
-    try:
-        target = load_authorized_target(args.target)
-    except ScopeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    target = load_authorized_target_cli(args.target)
+    if target is None:
         return 1
 
     points = load_injection_points(args.points)
