@@ -139,7 +139,13 @@ anything that shouldn't be publicly reachable), tech-stack fingerprinting
 from response headers and cookie names, missing recommended security
 headers, `xmlrpc.php` exposure (WordPress), and `robots.txt`/`sitemap.xml`
 for unlinked paths worth investigating further. All GET requests against
-the target's own public surface.
+the target's own public surface. Also runs two external-tool wrappers
+automatically (skip with `--skip-subdomain-enum`/`--skip-dir-enum` if
+either tool isn't installed, or the scan would take too long): subdomain
+enumeration via `subfinder` (passive, public sources only — see
+`docs/pentest-tools-howto.md` §8.2), and a wordlist-based directory/file
+brute-force via `dirsearch` (§2.5) — a deeper, slower generalization of
+the fixed exposed-files list above. `scripts/doctor.py` checks for both.
 
 **Auth/session tester** (Phase 4.3 — needs the same `auth` block in
 scope.json and `.env` test-account credentials as the IDOR tester below;
@@ -239,8 +245,10 @@ body — also flags an unexpected 2xx on an operator payload, the shape
 used for NoSQLi auth bypass; and a unique XSS marker checked for
 unescaped reflection in the response body. **These are signals for a
 human to confirm, not a final verdict** — especially a flagged SQLi
-result, re-check manually (or with `sqlmap`, per the playbook's tool
-list) before reporting it as a confirmed finding. All payloads are
+result, re-check manually (or with `sqlmap`/`NoSQLMap` — see
+`docs/pentest-tools-howto.md` §3.1/§3.2 for install/usage — not yet
+wrapped by this toolkit itself) before reporting it as a confirmed
+finding. All payloads are
 read-only in intent — nothing here tries to `DROP`/`UPDATE`/`DELETE`.
 Also runs a command/template-injection sweep on the same parameter
 (`{{7*7}}`, `${7*7}`, etc.) — flags if the evaluated result (`49`) shows
@@ -341,6 +349,8 @@ HIGH/CRITICAL/VULNERABLE markers in its own output; `nikto` scans for
 general server misconfiguration and outdated software, flagged if it
 reports any findings. Both run entirely over the network against the
 target's `base_url`. Use `--skip-testssl`/`--skip-nikto` to run just one.
+Install/usage details for both (and every other external tool this
+toolkit wraps or references) are in `docs/pentest-tools-howto.md`.
 
 Every report uploads straight to Cloudinary as JSON + HTML — nothing is
 written to local disk, ever, so there's no `reports/` folder to worry
@@ -388,6 +398,7 @@ security-toolkit/
 ├── README.md                        # This file
 ├── docs/
 │   ├── security-playbook.md         # The source playbook every check here automates a piece of
+│   ├── pentest-tools-howto.md       # Install/run guide for every external tool the playbook names (companion doc)
 │   └── RUNBOOK.md                   # Just the commands, in order — no explanations
 ├── config/
 │   ├── scope.example.json           # Template for config/scope.json (gitignored) — or just use manage_scope.py
@@ -405,12 +416,14 @@ security-toolkit/
 │   ├── credentials_db.py             # MongoDB-backed test-account credential store, keyed by target+label
 │   ├── report_index.py               # MongoDB index of every report ever uploaded — for the planned dashboard
 │   ├── doctor_checks.py              # Pure logic behind scripts/doctor.py (OS/package-manager detection, checks)
-│   ├── tool_locations.py             # Resolves testssl.sh/nikto: PATH first, then a vendor/ fallback
+│   ├── tool_locations.py             # Resolves testssl.sh/nikto/dirsearch/subfinder: PATH first, then a vendor/ fallback (subfinder: PATH only)
 │   ├── orchestrator.py               # Pure "what to run/skip and why" logic behind scripts/run_all_tests.py
 │   ├── findings_report.py            # Phase 4.10: aggregates flagged findings into one consolidated Markdown draft
 │   ├── env_file.py                   # Merge-in-place .env updates (legacy credential path only)
 │   ├── recon/                        # Black-box modules — HTTP(S) only, the normal workflow
 │   │   ├── fingerprint.py            # Phase 4.2: recon — exposed files, tech fingerprint, xmlrpc, robots.txt
+│   │   ├── subdomain_enum.py         # Phase 4.2: wraps subfinder (passive subdomain discovery), wired into run_recon.py
+│   │   ├── dir_enum.py               # Phase 4.2: wraps dirsearch (wordlist-based path brute-force), wired into run_recon.py
 │   │   ├── html_forms.py             # Shared HTML <form> parsing for login/register auto-detection
 │   │   ├── auth.py                   # Pluggable login adapters (WordPress/Laravel/JSON-token/custom)
 │   │   ├── auth_detect.py            # Auto-detects a login form's fields -> an `auth` block

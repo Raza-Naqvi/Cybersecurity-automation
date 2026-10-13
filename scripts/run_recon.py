@@ -15,6 +15,8 @@ import sys
 
 from security_toolkit.config import load_authorized_target_cli
 from security_toolkit.recon import fingerprint
+from security_toolkit.recon.dir_enum import DEFAULT_EXTENSIONS, run_dirsearch
+from security_toolkit.recon.subdomain_enum import run_subfinder
 from security_toolkit.reporting.cloud_report import upload_report_cli
 from security_toolkit.reporting.report import Finding, build_report
 
@@ -22,6 +24,15 @@ from security_toolkit.reporting.report import Finding, build_report
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument(
+        "--skip-subdomain-enum", action="store_true", help="Skip the subfinder subdomain-enumeration check"
+    )
+    parser.add_argument(
+        "--skip-dir-enum", action="store_true", help="Skip the dirsearch directory/file brute-force check"
+    )
+    parser.add_argument(
+        "--dir-enum-extensions", default=DEFAULT_EXTENSIONS, help=f"Extensions for dirsearch (default: {DEFAULT_EXTENSIONS})"
+    )
     args = parser.parse_args()
 
     target = load_authorized_target_cli(args.target)
@@ -79,6 +90,14 @@ def main() -> int:
             ),
         )
     )
+
+    if not args.skip_subdomain_enum:
+        subdomains = run_subfinder(target)
+        findings.append(Finding(name="Subdomain enumeration (subfinder)", flagged=subdomains.flagged, detail=subdomains.detail))
+
+    if not args.skip_dir_enum:
+        dirs = run_dirsearch(target, extensions=args.dir_enum_extensions)
+        findings.append(Finding(name="Directory/file brute-force (dirsearch)", flagged=dirs.flagged, detail=dirs.detail))
 
     report = build_report(title="Recon", target=target.name, findings=findings)
     if upload_report_cli(report) is None:

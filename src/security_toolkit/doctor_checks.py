@@ -107,6 +107,18 @@ def check_cloudinary_env_keys(env_values: dict[str, str]) -> CheckResult:
     )
 
 
+def check_tool_on_path(display_name: str, which_name: str, fix_hint: str) -> CheckResult:
+    """A simple presence check for a tool this toolkit can't reliably
+    auto-install (e.g. `subfinder`, a compiled Go binary rather than a
+    script that can run straight out of a git clone) — PATH only, no
+    vendoring fallback, no install attempt.
+    """
+    on_path = shutil.which(which_name)
+    if on_path:
+        return CheckResult(name=display_name, passed=True, detail=on_path)
+    return CheckResult(name=display_name, passed=False, detail="not found", fix_hint=fix_hint)
+
+
 def detect_os() -> str:
     system = platform.system().lower()
     if system == "darwin":
