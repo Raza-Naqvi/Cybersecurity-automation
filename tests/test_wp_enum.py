@@ -194,18 +194,45 @@ def test_run_wp_enum_happy_path_detects_everything(target):
     rest_users = MagicMock(status_code=200)
     rest_users.json.return_value = [{"slug": "admin"}]
 
+    plugin_readme = MagicMock(status_code=200, text="Stable tag: 8.5.0\n")
+
     with patch(
         "requests.get",
-        side_effect=[home_detect, readme_core, homepage_plugins, homepage_themes, style_css, rest_users],
+        side_effect=[home_detect, readme_core, homepage_plugins, plugin_readme, homepage_themes, style_css, rest_users],
     ):
         result = run_wp_enum(target, plugin_slugs=(), user_max_id=0, check_rate_limit=False)
 
     assert result.is_wordpress is True
     assert result.core_version == "6.4.2"
-    assert result.plugins == (SoftwareFinding(slug="woocommerce", version=None, source="passive"),)
+    # a plugin found passively still gets an active readme.txt probe for its version
+    assert result.plugins == (SoftwareFinding(slug="woocommerce", version="8.5.0", source="active"),)
     assert result.themes == (SoftwareFinding(slug="mytheme", version="2.0", source="active"),)
     assert result.usernames == ("admin",)
     assert result.rate_limit is None
+
+
+def test_run_wp_enum_keeps_passive_finding_when_active_probe_fails(target):
+    """If the slug's own readme.txt 404s (e.g. blocked), fall back to the
+    passive finding rather than losing the detection entirely.
+    """
+    home_detect = MagicMock(status_code=200, text="<html>wp-content here</html>")
+    readme_core = MagicMock(status_code=404, text="")
+    homepage_core_fallback = MagicMock(status_code=200, text="<html>no generator meta</html>")
+    homepage_plugins = MagicMock(status_code=200, text="<script src='/wp-content/plugins/cookie-law-info/a.js'>")
+    plugin_readme_404 = MagicMock(status_code=404, text="")
+    homepage_themes = MagicMock(status_code=200, text="<html>no theme refs</html>")
+    rest_users = MagicMock(status_code=401)
+
+    with patch(
+        "requests.get",
+        side_effect=[
+            home_detect, readme_core, homepage_core_fallback, homepage_plugins, plugin_readme_404,
+            homepage_themes, rest_users,
+        ],
+    ):
+        result = run_wp_enum(target, plugin_slugs=(), user_max_id=0, check_rate_limit=False)
+
+    assert result.plugins == (SoftwareFinding(slug="cookie-law-info", version=None, source="passive"),)
 
 
 def test_run_wp_enum_skips_rate_limit_check_for_non_wordpress(target):

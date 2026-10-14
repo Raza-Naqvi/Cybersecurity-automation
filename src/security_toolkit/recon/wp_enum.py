@@ -226,10 +226,17 @@ def run_wp_enum(
     core_version = check_core_version(target, timeout=timeout)
 
     passive_plugins = enumerate_plugins_passive(target, timeout=timeout)
-    passive_slugs = {finding.slug for finding in passive_plugins}
-    remaining_slugs = tuple(slug for slug in plugin_slugs if slug not in passive_slugs)
-    active_plugins = enumerate_plugins_active(target, slugs=remaining_slugs, timeout=timeout)
-    plugins = passive_plugins + active_plugins
+    passive_slugs = tuple(finding.slug for finding in passive_plugins)
+    # Actively probe every passively-found slug too (its readme.txt is the
+    # only way to get a version for it — a passive hit alone never reveals
+    # one), plus whatever's left of the wordlist, to find plugins that
+    # aren't currently enqueued on the homepage at all.
+    wordlist_slugs = tuple(slug for slug in plugin_slugs if slug not in passive_slugs)
+    active_plugins = enumerate_plugins_active(target, slugs=passive_slugs + wordlist_slugs, timeout=timeout)
+    active_by_slug = {finding.slug: finding for finding in active_plugins}
+    plugins = tuple(active_by_slug.get(finding.slug, finding) for finding in passive_plugins) + tuple(
+        finding for finding in active_plugins if finding.slug not in passive_slugs
+    )
 
     themes = enumerate_themes(target, timeout=timeout)
     usernames = enumerate_users(target, max_id=user_max_id, timeout=timeout)
