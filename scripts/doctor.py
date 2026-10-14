@@ -30,6 +30,7 @@ from security_toolkit.doctor_checks import (
     check_env_file,
     check_package_importable,
     check_python_version,
+    check_safe_browsing_env_key,
     check_tool_on_path,
     detect_os,
     detect_package_manager,
@@ -269,7 +270,17 @@ def main() -> int:
         "or download a prebuilt binary — see docs/pentest-tools-howto.md §2.3. "
         "Run 'nuclei -update-templates' once after installing.",
     )
-    optional_results = [subfinder_result, dirsearch_result, nuclei_result]
+
+    import os
+
+    from dotenv import load_dotenv
+
+    load_dotenv(ENV_PATH)
+    safe_browsing_result = check_safe_browsing_env_key(
+        {k: v for k, v in os.environ.items() if k.startswith("GOOGLE_SAFE_BROWSING_")}
+    )
+
+    optional_results = [subfinder_result, dirsearch_result, nuclei_result, safe_browsing_result]
     results.extend(optional_results)
 
     print()

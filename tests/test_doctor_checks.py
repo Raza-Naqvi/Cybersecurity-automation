@@ -9,6 +9,7 @@ from security_toolkit.doctor_checks import (
     check_env_file,
     check_package_importable,
     check_python_version,
+    check_safe_browsing_env_key,
     check_tool_on_path,
     detect_os,
     detect_package_manager,
@@ -81,6 +82,17 @@ def test_check_cloudinary_env_keys_passes_with_separate_vars():
 def test_check_cloudinary_env_keys_fails_when_neither_set():
     result = check_cloudinary_env_keys({})
     assert result.passed is False
+
+
+def test_check_safe_browsing_env_key_passes_when_set():
+    result = check_safe_browsing_env_key({"GOOGLE_SAFE_BROWSING_API_KEY": "abc"})
+    assert result.passed is True
+
+
+def test_check_safe_browsing_env_key_fails_when_unset():
+    result = check_safe_browsing_env_key({})
+    assert result.passed is False
+    assert result.fix_hint is not None
 
 
 def test_detect_os_maps_darwin_to_mac():

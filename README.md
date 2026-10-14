@@ -139,13 +139,16 @@ anything that shouldn't be publicly reachable), tech-stack fingerprinting
 from response headers and cookie names, missing recommended security
 headers, `xmlrpc.php` exposure (WordPress), and `robots.txt`/`sitemap.xml`
 for unlinked paths worth investigating further. All GET requests against
-the target's own public surface. Also runs two external-tool wrappers
-automatically (skip with `--skip-subdomain-enum`/`--skip-dir-enum` if
-either tool isn't installed, or the scan would take too long): subdomain
-enumeration via `subfinder` (passive, public sources only — see
-`docs/pentest-tools-howto.md` §8.2), and a wordlist-based directory/file
-brute-force via `dirsearch` (§2.5) — a deeper, slower generalization of
-the fixed exposed-files list above. `scripts/doctor.py` checks for both.
+the target's own public surface. Also runs three automatic checks on
+top (skip any with `--skip-subdomain-enum`/`--skip-dir-enum`/
+`--skip-safe-browsing` if a tool isn't installed/configured, or a scan
+would take too long): subdomain enumeration via `subfinder` (passive,
+public sources only — see `docs/pentest-tools-howto.md` §8.2), a
+wordlist-based directory/file brute-force via `dirsearch` (§2.5) — a
+deeper, slower generalization of the fixed exposed-files list above —
+and a malware/phishing blacklist check via Google Safe Browsing (§7.2b,
+needs a free `GOOGLE_SAFE_BROWSING_API_KEY` in `.env`). `scripts/doctor.py`
+checks for all three, none blocking.
 
 **Auth/session tester** (Phase 4.3 — needs the same `auth` block in
 scope.json and `.env` test-account credentials as the IDOR tester below;
@@ -430,6 +433,7 @@ security-toolkit/
 │   │   ├── fingerprint.py            # Phase 4.2: recon — exposed files, tech fingerprint, xmlrpc, robots.txt
 │   │   ├── subdomain_enum.py         # Phase 4.2: wraps subfinder (passive subdomain discovery), wired into run_recon.py
 │   │   ├── dir_enum.py               # Phase 4.2: wraps dirsearch (wordlist-based path brute-force), wired into run_recon.py
+│   │   ├── safe_browsing_check.py    # Phase 4.2: Google Safe Browsing malware/phishing check, wired into run_recon.py
 │   │   ├── html_forms.py             # Shared HTML <form> parsing for login/register auto-detection
 │   │   ├── auth.py                   # Pluggable login adapters (WordPress/Laravel/JSON-token/custom)
 │   │   ├── auth_detect.py            # Auto-detects a login form's fields -> an `auth` block
