@@ -19,6 +19,7 @@ from security_toolkit.recon import fingerprint
 from security_toolkit.recon.dir_enum import DEFAULT_EXTENSIONS, run_dirsearch
 from security_toolkit.recon.safe_browsing_check import check_safe_browsing
 from security_toolkit.recon.subdomain_enum import run_subfinder
+from security_toolkit.recon.wp_enum import run_wp_enum
 from security_toolkit.reporting.cloud_report import upload_report_cli
 from security_toolkit.reporting.report import Finding, build_report
 
@@ -37,6 +38,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--skip-safe-browsing", action="store_true", help="Skip the Google Safe Browsing blacklist check"
+    )
+    parser.add_argument(
+        "--skip-wp-enum", action="store_true", help="Skip WordPress enumeration (only runs when target.type == 'wordpress')"
     )
     args = parser.parse_args()
 
@@ -111,6 +115,18 @@ def main() -> int:
         findings.append(
             Finding(name="Malware/phishing blacklist (Google Safe Browsing)", flagged=safe_browsing.flagged, detail=safe_browsing.detail)
         )
+
+    if not args.skip_wp_enum and target.type == "wordpress":
+        wp_result = run_wp_enum(target)
+        findings.append(Finding(name="WordPress detection/enumeration", flagged=False, detail=wp_result.detail))
+        if wp_result.is_wordpress:
+            findings.append(
+                Finding(
+                    name="WordPress username enumeration",
+                    flagged=len(wp_result.usernames) > 0,
+                    detail=(f"FLAGGED: {', '.join(wp_result.usernames)}" if wp_result.usernames else "no usernames exposed"),
+                )
+            )
 
     report = build_report(title="Recon", target=target.name, findings=findings)
     if upload_report_cli(report) is None:

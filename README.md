@@ -139,16 +139,27 @@ anything that shouldn't be publicly reachable), tech-stack fingerprinting
 from response headers and cookie names, missing recommended security
 headers, `xmlrpc.php` exposure (WordPress), and `robots.txt`/`sitemap.xml`
 for unlinked paths worth investigating further. All GET requests against
-the target's own public surface. Also runs three automatic checks on
+the target's own public surface. Also runs four automatic checks on
 top (skip any with `--skip-subdomain-enum`/`--skip-dir-enum`/
-`--skip-safe-browsing` if a tool isn't installed/configured, or a scan
-would take too long): subdomain enumeration via `subfinder` (passive,
+`--skip-safe-browsing`/`--skip-wp-enum` if a tool isn't installed/configured,
+or a scan would take too long): subdomain enumeration via `subfinder` (passive,
 public sources only — see `docs/pentest-tools-howto.md` §8.2), a
 wordlist-based directory/file brute-force via `dirsearch` (§2.5) — a
 deeper, slower generalization of the fixed exposed-files list above —
-and a malware/phishing blacklist check via Google Safe Browsing (§7.2b,
-needs a free `GOOGLE_SAFE_BROWSING_API_KEY` in `.env`). `scripts/doctor.py`
-checks for all three, none blocking.
+a malware/phishing blacklist check via Google Safe Browsing (§7.2b,
+needs a free `GOOGLE_SAFE_BROWSING_API_KEY` in `.env`), and — only for a
+target with `"type": "wordpress"` in scope.json — WordPress core/plugin/
+theme/user enumeration via `wp_enum.py`, our own alternative to WPScan
+(§2.1; no external tool or API token needed). `scripts/doctor.py`
+checks for the first three, none blocking (`wp_enum.py` needs nothing
+to check, since it's pure Python with no external dependency).
+
+**WordPress enumeration standalone** (same check as above, run on its own
+— useful for a longer username-enumeration sweep via `--user-max-id`):
+
+```bash
+python scripts/run_wp_test.py --target example-wordpress-staging
+```
 
 **Auth/session tester** (Phase 4.3 — needs the same `auth` block in
 scope.json and `.env` test-account credentials as the IDOR tester below;
@@ -434,6 +445,7 @@ security-toolkit/
 │   │   ├── subdomain_enum.py         # Phase 4.2: wraps subfinder (passive subdomain discovery), wired into run_recon.py
 │   │   ├── dir_enum.py               # Phase 4.2: wraps dirsearch (wordlist-based path brute-force), wired into run_recon.py
 │   │   ├── safe_browsing_check.py    # Phase 4.2: Google Safe Browsing malware/phishing check, wired into run_recon.py
+│   │   ├── wp_enum.py                # Phase 4.2/4.4: our own WPScan alternative — core/plugin/theme/user enumeration, HTTP-only, no API token/cap. target.type=="wordpress" only. Wired into run_recon.py
 │   │   ├── html_forms.py             # Shared HTML <form> parsing for login/register auto-detection
 │   │   ├── auth.py                   # Pluggable login adapters (WordPress/Laravel/JSON-token/custom)
 │   │   ├── auth_detect.py            # Auto-detects a login form's fields -> an `auth` block
@@ -469,6 +481,7 @@ security-toolkit/
 │   ├── run_ssrf_test.py              # CLI entrypoint (black-box)
 │   ├── run_jwt_test.py               # CLI entrypoint (black-box, needs a captured token)
 │   ├── run_infra_test.py             # CLI entrypoint (black-box)
+│   ├── run_wp_test.py                 # CLI entrypoint (black-box) — our own WPScan alternative, target.type=="wordpress" only
 │   ├── generate_findings_report.py   # Aggregates flagged findings into one consolidated draft
 │   └── legacy_whitebox/              # NOT used currently, see above
 └── tests/                            # Mirrors src/security_toolkit/ structure, one test file per module
