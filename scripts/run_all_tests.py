@@ -77,6 +77,7 @@ def main() -> int:
     parser.add_argument("--skip-rate-limit", action="store_true")
     parser.add_argument("--skip-subdomain-enum", action="store_true", help="Skip the subfinder check during recon")
     parser.add_argument("--skip-dir-enum", action="store_true", help="Skip the dirsearch check during recon")
+    parser.add_argument("--skip-safe-browsing", action="store_true", help="Skip the Google Safe Browsing check during recon")
     parser.add_argument("--yes", action="store_true", help="Answer the account-creation confirmation yes automatically")
     args = parser.parse_args()
 
@@ -141,6 +142,8 @@ def main() -> int:
         recon_args.append("--skip-subdomain-enum")
     if args.skip_dir_enum:
         recon_args.append("--skip-dir-enum")
+    if args.skip_safe_browsing:
+        recon_args.append("--skip-safe-browsing")
     exit_codes["recon"] = _run_script("run_recon.py", recon_args)
 
     if plan.run_auth_session:

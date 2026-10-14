@@ -11,11 +11,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
-from security_toolkit.config import load_authorized_target_cli
+from security_toolkit.config import load_authorized_target_cli, load_env
 from security_toolkit.recon import fingerprint
 from security_toolkit.recon.dir_enum import DEFAULT_EXTENSIONS, run_dirsearch
+from security_toolkit.recon.safe_browsing_check import check_safe_browsing
 from security_toolkit.recon.subdomain_enum import run_subfinder
 from security_toolkit.reporting.cloud_report import upload_report_cli
 from security_toolkit.reporting.report import Finding, build_report
@@ -32,6 +34,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--dir-enum-extensions", default=DEFAULT_EXTENSIONS, help=f"Extensions for dirsearch (default: {DEFAULT_EXTENSIONS})"
+    )
+    parser.add_argument(
+        "--skip-safe-browsing", action="store_true", help="Skip the Google Safe Browsing blacklist check"
     )
     args = parser.parse_args()
 
@@ -98,6 +103,14 @@ def main() -> int:
     if not args.skip_dir_enum:
         dirs = run_dirsearch(target, extensions=args.dir_enum_extensions)
         findings.append(Finding(name="Directory/file brute-force (dirsearch)", flagged=dirs.flagged, detail=dirs.detail))
+
+    if not args.skip_safe_browsing:
+        if not os.environ.get("GOOGLE_SAFE_BROWSING_API_KEY"):
+            load_env()  # .env isn't loaded automatically anywhere else in the process
+        safe_browsing = check_safe_browsing(target, api_key=os.environ.get("GOOGLE_SAFE_BROWSING_API_KEY"))
+        findings.append(
+            Finding(name="Malware/phishing blacklist (Google Safe Browsing)", flagged=safe_browsing.flagged, detail=safe_browsing.detail)
+        )
 
     report = build_report(title="Recon", target=target.name, findings=findings)
     if upload_report_cli(report) is None:

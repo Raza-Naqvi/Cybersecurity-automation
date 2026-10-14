@@ -107,6 +107,22 @@ def check_cloudinary_env_keys(env_values: dict[str, str]) -> CheckResult:
     )
 
 
+def check_safe_browsing_env_key(env_values: dict[str, str]) -> CheckResult:
+    """Optional — recon's Google Safe Browsing check reports itself as
+    unconfigured (not a failure) when this is unset, same as subfinder/
+    dirsearch being absent, so this never blocks "this machine is ready".
+    """
+    if env_values.get("GOOGLE_SAFE_BROWSING_API_KEY"):
+        return CheckResult(name="Google Safe Browsing API key", passed=True, detail="GOOGLE_SAFE_BROWSING_API_KEY set")
+    return CheckResult(
+        name="Google Safe Browsing API key",
+        passed=False,
+        detail="not set",
+        fix_hint="Get a free key from the Google Cloud Console (enable the 'Safe Browsing API') "
+        "and set GOOGLE_SAFE_BROWSING_API_KEY in .env, or pass --skip-safe-browsing",
+    )
+
+
 def check_tool_on_path(display_name: str, which_name: str, fix_hint: str) -> CheckResult:
     """A simple presence check for a tool this toolkit can't reliably
     auto-install (e.g. `subfinder`, a compiled Go binary rather than a
