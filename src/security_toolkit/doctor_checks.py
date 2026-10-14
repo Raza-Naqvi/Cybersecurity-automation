@@ -123,6 +123,23 @@ def check_safe_browsing_env_key(env_values: dict[str, str]) -> CheckResult:
     )
 
 
+def check_wordfence_env_key(env_values: dict[str, str]) -> CheckResult:
+    """Optional — recon's WordPress vulnerability matching (wp_vuln_match.py)
+    reports itself as unconfigured (not a failure) when this is unset,
+    same as Safe Browsing's key, so this never blocks "this machine is
+    ready". wp_enum.py's enumeration half needs no key at all.
+    """
+    if env_values.get("WORDFENCE_API_KEY"):
+        return CheckResult(name="Wordfence Intelligence API key", passed=True, detail="WORDFENCE_API_KEY set")
+    return CheckResult(
+        name="Wordfence Intelligence API key",
+        passed=False,
+        detail="not set",
+        fix_hint="Get a free key from your Wordfence.com account's Integrations page "
+        "and set WORDFENCE_API_KEY in .env, or pass --skip-vuln-match",
+    )
+
+
 def check_tool_on_path(display_name: str, which_name: str, fix_hint: str) -> CheckResult:
     """A simple presence check for a tool this toolkit can't reliably
     auto-install (e.g. `subfinder`, a compiled Go binary rather than a

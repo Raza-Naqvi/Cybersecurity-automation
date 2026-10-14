@@ -12,11 +12,13 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import sys
 from argparse import ArgumentParser
 
-from security_toolkit.config import load_authorized_target_cli
+from security_toolkit.config import load_authorized_target_cli, load_env
 from security_toolkit.recon.wp_enum import DEFAULT_USER_MAX_ID, run_wp_enum
+from security_toolkit.recon.wp_vuln_match import run_wp_vuln_match
 from security_toolkit.reporting.cloud_report import upload_report_cli
 from security_toolkit.reporting.report import Finding, build_report
 
@@ -29,6 +31,10 @@ def main() -> int:
         help=f"How many ?author=N IDs to probe if the REST API doesn't reveal usernames (default {DEFAULT_USER_MAX_ID})",
     )
     parser.add_argument("--skip-rate-limit", action="store_true", help="Skip the user-enumeration rate-limit check")
+    parser.add_argument(
+        "--skip-vuln-match", action="store_true",
+        help="Skip matching detected versions against the Wordfence Intelligence vulnerability feed",
+    )
     args = parser.parse_args()
 
     target = load_authorized_target_cli(args.target)
@@ -64,6 +70,19 @@ def main() -> int:
             findings.append(
                 Finding(name=result.rate_limit.label, flagged=result.rate_limit.flagged, detail=result.rate_limit.detail)
             )
+
+        if not args.skip_vuln_match:
+            if not os.environ.get("WORDFENCE_API_KEY"):
+                load_env()  # .env isn't loaded automatically anywhere else in the process
+            vuln_result = run_wp_vuln_match(result, api_key=os.environ.get("WORDFENCE_API_KEY"))
+            findings.append(
+                Finding(name="Vulnerability matching (Wordfence Intelligence)", flagged=vuln_result.flagged, detail=vuln_result.detail)
+            )
+            for match in vuln_result.matches:
+                detail = match.detail
+                if match.mitre_notice:
+                    detail = f"{detail}\n{match.mitre_notice}"
+                findings.append(Finding(name=f"{match.software_type}:{match.slug} vulnerability", flagged=True, detail=detail))
 
     report = build_report(title="WordPress Enumeration", target=target.name, findings=findings)
     if upload_report_cli(report) is None:

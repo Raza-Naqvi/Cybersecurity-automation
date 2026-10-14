@@ -20,6 +20,7 @@ from security_toolkit.recon.dir_enum import DEFAULT_EXTENSIONS, run_dirsearch
 from security_toolkit.recon.safe_browsing_check import check_safe_browsing
 from security_toolkit.recon.subdomain_enum import run_subfinder
 from security_toolkit.recon.wp_enum import run_wp_enum
+from security_toolkit.recon.wp_vuln_match import run_wp_vuln_match
 from security_toolkit.reporting.cloud_report import upload_report_cli
 from security_toolkit.reporting.report import Finding, build_report
 
@@ -41,6 +42,10 @@ def main() -> int:
     )
     parser.add_argument(
         "--skip-wp-enum", action="store_true", help="Skip WordPress enumeration (only runs when target.type == 'wordpress')"
+    )
+    parser.add_argument(
+        "--skip-vuln-match", action="store_true",
+        help="Skip matching detected WordPress versions against the Wordfence Intelligence vulnerability feed",
     )
     args = parser.parse_args()
 
@@ -127,6 +132,13 @@ def main() -> int:
                     detail=(f"FLAGGED: {', '.join(wp_result.usernames)}" if wp_result.usernames else "no usernames exposed"),
                 )
             )
+            if not args.skip_vuln_match:
+                if not os.environ.get("WORDFENCE_API_KEY"):
+                    load_env()
+                vuln_result = run_wp_vuln_match(wp_result, api_key=os.environ.get("WORDFENCE_API_KEY"))
+                findings.append(
+                    Finding(name="WordPress vulnerability matching (Wordfence Intelligence)", flagged=vuln_result.flagged, detail=vuln_result.detail)
+                )
 
     report = build_report(title="Recon", target=target.name, findings=findings)
     if upload_report_cli(report) is None:
