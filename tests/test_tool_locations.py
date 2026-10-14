@@ -3,6 +3,7 @@ from unittest.mock import patch
 from security_toolkit.tool_locations import (
     resolve_dirsearch_bin,
     resolve_nikto_bin,
+    resolve_nuclei_bin,
     resolve_subfinder_bin,
     resolve_testssl_bin,
 )
@@ -82,3 +83,13 @@ def test_resolve_dirsearch_bin_falls_back_to_vendored_python_script():
 def test_resolve_dirsearch_bin_falls_back_to_bare_name_without_python():
     with patch("shutil.which", return_value=None):
         assert resolve_dirsearch_bin() == ("dirsearch",)
+
+
+def test_resolve_nuclei_bin_prefers_path():
+    with patch("shutil.which", return_value="/usr/local/bin/nuclei"):
+        assert resolve_nuclei_bin() == ("/usr/local/bin/nuclei",)
+
+
+def test_resolve_nuclei_bin_falls_back_to_bare_name_when_not_on_path():
+    with patch("shutil.which", return_value=None):
+        assert resolve_nuclei_bin() == ("nuclei",)
