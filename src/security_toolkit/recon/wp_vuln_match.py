@@ -92,6 +92,10 @@ def _as_utc(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+def _meta_id(feed: str) -> str:
+    return f"{feed}:_meta"
+
+
 def get_vulnerability_feed(
     api_key: str | None,
     feed: str = "production",
@@ -102,15 +106,34 @@ def get_vulnerability_feed(
     """`fetch_vulnerability_feed`, cached in MongoDB for `max_age` —
     Wordfence's own full-feed-only, rate-limited API means re-fetching
     on every scan run would burn through the limit fast.
+
+    The feed itself is thousands of vulnerability records — far past
+    MongoDB's 16MB single-document limit — so it's sharded across one
+    document per record (keyed by the vulnerability's own UUID) plus
+    one small metadata document that tracks the cache timestamp,
+    rather than stored as a single oversized blob.
     """
     collection = cache_collection if cache_collection is not None else get_mongo_database()[CACHE_COLLECTION_NAME]
-    cached = collection.find_one({"_id": feed})
     now = datetime.now(timezone.utc)
-    if cached and (now - _as_utc(cached["fetched_at"])) < max_age:
-        return cached["data"]
+    meta = collection.find_one({"_id": _meta_id(feed)})
+    if meta and (now - _as_utc(meta["fetched_at"])) < max_age:
+        cached_records = list(collection.find({"feed": feed, "_meta": {"$exists": False}}))
+        if cached_records:
+            return {doc["vuln_id"]: doc["record"] for doc in cached_records}
 
     data = fetch_vulnerability_feed(api_key, feed=feed, timeout=timeout)
-    collection.replace_one({"_id": feed}, {"_id": feed, "fetched_at": now, "data": data}, upsert=True)
+
+    collection.delete_many({"feed": feed, "_meta": {"$exists": False}})
+    if data:
+        collection.insert_many(
+            [
+                {"_id": f"{feed}:{vuln_id}", "feed": feed, "vuln_id": vuln_id, "record": record}
+                for vuln_id, record in data.items()
+            ]
+        )
+    collection.replace_one(
+        {"_id": _meta_id(feed)}, {"_id": _meta_id(feed), "feed": feed, "_meta": True, "fetched_at": now}, upsert=True
+    )
     return data
 
 

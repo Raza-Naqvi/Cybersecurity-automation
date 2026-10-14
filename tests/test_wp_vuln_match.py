@@ -14,13 +14,29 @@ from security_toolkit.recon.wp_vuln_match import (
 
 
 class FakeCollection:
-    """Minimal find_one/replace_one stand-in — no real Mongo needed for tests."""
+    """Minimal find_one/find/delete_many/insert_many/replace_one stand-in
+    — just enough of pymongo's Collection API to test the sharded cache
+    without a real MongoDB.
+    """
 
     def __init__(self):
         self._docs: dict = {}
 
     def find_one(self, query):
         return self._docs.get(query["_id"])
+
+    def find(self, query):
+        feed = query.get("feed")
+        return [doc for doc in self._docs.values() if doc.get("feed") == feed and "_meta" not in doc]
+
+    def delete_many(self, query):
+        feed = query.get("feed")
+        for doc_id in [doc_id for doc_id, doc in self._docs.items() if doc.get("feed") == feed and "_meta" not in doc]:
+            del self._docs[doc_id]
+
+    def insert_many(self, docs):
+        for doc in docs:
+            self._docs[doc["_id"]] = doc
 
     def replace_one(self, query, doc, upsert=False):
         self._docs[query["_id"]] = doc
@@ -81,12 +97,17 @@ def test_fetch_vulnerability_feed_raises_on_non_200():
             fetch_vulnerability_feed("my-key")
 
 
+def _seed_cache(collection: FakeCollection, feed: str, fetched_at: datetime, data: dict) -> None:
+    """Populate a FakeCollection the same sharded way get_vulnerability_feed writes it."""
+    collection.insert_many(
+        [{"_id": f"{feed}:{vuln_id}", "feed": feed, "vuln_id": vuln_id, "record": record} for vuln_id, record in data.items()]
+    )
+    collection.replace_one({"_id": f"{feed}:_meta"}, {"_id": f"{feed}:_meta", "feed": feed, "_meta": True, "fetched_at": fetched_at})
+
+
 def test_get_vulnerability_feed_uses_cache_when_fresh():
     collection = FakeCollection()
-    collection.replace_one(
-        {"_id": "production"},
-        {"_id": "production", "fetched_at": datetime.now(timezone.utc), "data": SAMPLE_FEED},
-    )
+    _seed_cache(collection, "production", datetime.now(timezone.utc), SAMPLE_FEED)
     with patch("requests.get") as mock_get:
         data = get_vulnerability_feed("my-key", cache_collection=collection)
     assert data == SAMPLE_FEED
@@ -96,15 +117,15 @@ def test_get_vulnerability_feed_uses_cache_when_fresh():
 def test_get_vulnerability_feed_refetches_when_stale():
     collection = FakeCollection()
     stale_time = datetime.now(timezone.utc) - timedelta(hours=48)
-    collection.replace_one(
-        {"_id": "production"}, {"_id": "production", "fetched_at": stale_time, "data": {"old": True}}
-    )
+    _seed_cache(collection, "production", stale_time, {"old-uuid": {"id": "old-uuid", "software": []}})
     response = MagicMock(status_code=200)
     response.json.return_value = SAMPLE_FEED
     with patch("requests.get", return_value=response) as mock_get:
         data = get_vulnerability_feed("my-key", cache_collection=collection)
     assert data == SAMPLE_FEED
     mock_get.assert_called_once()
+    # the stale record is gone, replaced by the freshly fetched ones
+    assert [doc for doc in collection.find({"feed": "production"}) if doc["vuln_id"] == "old-uuid"] == []
 
 
 def test_get_vulnerability_feed_treats_naive_cached_datetime_as_utc():
@@ -113,9 +134,7 @@ def test_get_vulnerability_feed_treats_naive_cached_datetime_as_utc():
     """
     collection = FakeCollection()
     fresh_naive = datetime.now(timezone.utc).replace(tzinfo=None)
-    collection.replace_one(
-        {"_id": "production"}, {"_id": "production", "fetched_at": fresh_naive, "data": SAMPLE_FEED}
-    )
+    _seed_cache(collection, "production", fresh_naive, SAMPLE_FEED)
     with patch("requests.get") as mock_get:
         data = get_vulnerability_feed("my-key", cache_collection=collection)
     assert data == SAMPLE_FEED
@@ -130,7 +149,25 @@ def test_get_vulnerability_feed_fetches_and_caches_when_no_cache():
         data = get_vulnerability_feed("my-key", cache_collection=collection)
     assert data == SAMPLE_FEED
     mock_get.assert_called_once()
-    assert collection.find_one({"_id": "production"})["data"] == SAMPLE_FEED
+    cached = {doc["vuln_id"]: doc["record"] for doc in collection.find({"feed": "production"})}
+    assert cached == SAMPLE_FEED
+
+
+def test_get_vulnerability_feed_shards_large_feeds_across_many_documents():
+    """The real bug this guards against: Wordfence's feed is thousands of
+    records — storing it as one document's field blows past MongoDB's
+    16MB single-document limit. Each record must be its own document.
+    """
+    collection = FakeCollection()
+    big_feed = {f"uuid-{i}": {"id": f"uuid-{i}", "software": []} for i in range(500)}
+    response = MagicMock(status_code=200)
+    response.json.return_value = big_feed
+    with patch("requests.get", return_value=response):
+        data = get_vulnerability_feed("my-key", cache_collection=collection)
+    assert data == big_feed
+    # 500 record documents + 1 metadata document, never one giant blob
+    assert len([d for d in collection._docs.values() if "_meta" not in d]) == 500
+    assert collection.find_one({"_id": "production:_meta"}) is not None
 
 
 def test_version_in_range_inclusive_bounds():
