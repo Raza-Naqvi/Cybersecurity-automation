@@ -32,6 +32,9 @@ def main() -> int:
     parser.add_argument("--testssl-bin", help="Override the resolved testssl.sh command (PATH/vendor/ auto-detected otherwise)")
     parser.add_argument("--nikto-bin", help="Override the resolved nikto command (PATH/vendor/ auto-detected otherwise)")
     parser.add_argument("--nuclei-bin", help="Override the resolved nuclei command (PATH auto-detected otherwise)")
+    parser.add_argument("--testssl-timeout", type=float, help="Seconds before giving up on testssl.sh (default 180)")
+    parser.add_argument("--nikto-timeout", type=float, help="Seconds before giving up on nikto (default 300)")
+    parser.add_argument("--nuclei-timeout", type=float, help="Seconds before giving up on nuclei (default 300)")
     args = parser.parse_args()
 
     target = load_authorized_target_cli(args.target)
@@ -47,7 +50,8 @@ def main() -> int:
     if not args.skip_testssl:
         try:
             testssl_cmd = (args.testssl_bin,) if args.testssl_bin else None
-            result = run_testssl(target, testssl_cmd=testssl_cmd)
+            kwargs = {"timeout": args.testssl_timeout} if args.testssl_timeout else {}
+            result = run_testssl(target, testssl_cmd=testssl_cmd, **kwargs)
             findings.append(Finding(name="testssl.sh (TLS/cert checks)", flagged=result.flagged, detail=result.detail))
         except RuntimeError as exc:
             findings.append(Finding(name="testssl.sh (TLS/cert checks)", flagged=True, detail=f"check skipped: {exc}"))
@@ -55,7 +59,8 @@ def main() -> int:
     if not args.skip_nikto:
         try:
             nikto_cmd = (args.nikto_bin,) if args.nikto_bin else None
-            result = run_nikto(target, nikto_cmd=nikto_cmd)
+            kwargs = {"timeout": args.nikto_timeout} if args.nikto_timeout else {}
+            result = run_nikto(target, nikto_cmd=nikto_cmd, **kwargs)
             findings.append(Finding(name="nikto (server misconfiguration)", flagged=result.flagged, detail=result.detail))
         except RuntimeError as exc:
             findings.append(Finding(name="nikto (server misconfiguration)", flagged=True, detail=f"check skipped: {exc}"))
@@ -63,7 +68,8 @@ def main() -> int:
     if not args.skip_nuclei:
         try:
             nuclei_cmd = (args.nuclei_bin,) if args.nuclei_bin else None
-            result = run_nuclei(target, nuclei_cmd=nuclei_cmd)
+            kwargs = {"timeout": args.nuclei_timeout} if args.nuclei_timeout else {}
+            result = run_nuclei(target, nuclei_cmd=nuclei_cmd, **kwargs)
             findings.append(Finding(name="nuclei (CVE-template scanning)", flagged=result.flagged, detail=result.detail))
         except RuntimeError as exc:
             findings.append(Finding(name="nuclei (CVE-template scanning)", flagged=True, detail=f"check skipped: {exc}"))
