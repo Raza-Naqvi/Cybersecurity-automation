@@ -76,14 +76,25 @@ def run_nikto(target: Target, nikto_cmd: tuple[str, ...] | None = None, timeout:
     """Run nikto against the target's base_url. Nikto reports findings as
     a flat list of lines starting with '+' — any output beyond its
     banner/summary lines is treated as something worth a human's review.
+
+    Passes nikto's own `-maxtime` so it self-bounds and returns whatever
+    it found up to that point, gracefully — a site that returns the
+    same non-404 status for every unmatched path (a "soft 404", see
+    `dir_enum.py`'s docstring) can make nikto's own huge built-in test
+    database take far longer than usual, since it has no equivalent to
+    dirsearch's `--auto-calibration` to skip that pattern. `-maxtime` is
+    set a little under `timeout` so nikto exits on its own terms before
+    this wrapper's outer subprocess timeout would otherwise kill it and
+    discard everything found so far.
     """
     if not target.base_url:
         raise RuntimeError(f"Target '{target.name}' has no base_url in scope.json")
     require_in_scope(target.base_url, target)
 
     cmd = list(nikto_cmd) if nikto_cmd else list(resolve_nikto_bin())
+    maxtime = max(int(timeout) - 10, 10)
     try:
-        succeeded, output = _run_tool([*cmd, "-h", target.base_url, "-ask", "no"], timeout)
+        succeeded, output = _run_tool([*cmd, "-h", target.base_url, "-ask", "no", "-maxtime", f"{maxtime}s"], timeout)
     except RuntimeError as exc:
         return ToolCheckResult(tool="nikto", succeeded=False, flagged=True, detail=str(exc))
 

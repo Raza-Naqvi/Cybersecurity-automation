@@ -96,6 +96,16 @@ def test_run_nikto_missing_binary_raises_result_flagged(target):
     assert "not found" in result.detail
 
 
+def test_run_nikto_passes_maxtime_under_the_outer_timeout(target):
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="- Nikto v2.5.0\n+ 0 host(s) tested\n", stderr="")
+        run_nikto(target, timeout=300.0)
+
+    args = mock_run.call_args[0][0]
+    assert "-maxtime" in args
+    assert args[args.index("-maxtime") + 1] == "290s"
+
+
 def _jsonl(*records: dict) -> str:
     return "\n".join(json.dumps(r) for r in records)
 
