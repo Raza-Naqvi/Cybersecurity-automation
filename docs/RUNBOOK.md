@@ -52,7 +52,15 @@ python scripts/run_idor_test.py --target <name> --cases config/idor_cases/<name>
 python scripts/run_injection_test.py --target <name> --points config/injection_points/<name>.json
 python scripts/run_upload_test.py --target <name> --cases config/upload_cases/<name>.json
 python scripts/run_business_logic_test.py --target <name> --cases config/business_logic_cases/<name>.json
+python scripts/run_ssrf_test.py --target <name> --points config/injection_points/<name>.json
+python scripts/run_jwt_test.py --target <name> --token <captured-jwt> --protected-path <path>
 python scripts/run_infra_test.py --target <name>
+python scripts/run_wp_test.py --target <name>
+# ^ only meaningful for a target with "type": "wordpress" in scope.json;
+#   also runs automatically inside run_recon.py for such targets.
+
+python scripts/generate_findings_report.py --target <name>
+# aggregates every flagged finding on record for this target into one draft
 ```
 
 ## Managing test-account credentials by hand (invite-only sites)
