@@ -42,8 +42,11 @@ DEFAULT_PLUGIN_SLUGS = (
     "wp-rocket",
 )
 
-_PLUGIN_PATH_RE = re.compile(r"wp-content/plugins/([a-zA-Z0-9_-]+)")
-_THEME_PATH_RE = re.compile(r"wp-content/themes/([a-zA-Z0-9_-]+)")
+_ASSET_URL_RE = re.compile(
+    r'(?:src|href)=["\']([^"\']*wp-content/(?:plugins|themes)/[a-zA-Z0-9_-]+/[^"\']*)["\']', re.IGNORECASE
+)
+_ASSET_SLUG_RE = re.compile(r"wp-content/(plugins|themes)/([a-zA-Z0-9_-]+)")
+_ASSET_VERSION_QUERY_RE = re.compile(r"[?&]ver=([0-9][0-9.]*)", re.IGNORECASE)
 _PLUGIN_README_VERSION_RE = re.compile(r"Stable tag:\s*([0-9][0-9.]*)", re.IGNORECASE)
 _THEME_STYLE_VERSION_RE = re.compile(r"Version:\s*([0-9][0-9.]*)", re.IGNORECASE)
 _CORE_README_VERSION_RE = re.compile(r"Version\s+([0-9][0-9.]*)", re.IGNORECASE)
@@ -106,19 +109,36 @@ def check_core_version(target: Target, timeout: float = 10.0) -> str | None:
     return match.group(1) if match else None
 
 
-def _passive_slugs(html: str, pattern: re.Pattern[str]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(pattern.findall(html)))  # de-dupe, keep first-seen order
+def _passive_findings(html: str, kind: str) -> tuple[SoftwareFinding, ...]:
+    """Scan markup for wp-content/plugins or wp-content/themes asset refs
+    (enqueued <script>/<link> tags) — zero extra requests beyond the
+    page fetch already made. WordPress enqueues assets with a `?ver=`
+    cache-busting query string matching the plugin/theme's own version,
+    so this often gets a real version with no further requests at all
+    — and unlike an active readme.txt/style.css probe, it still works
+    when those files are blocked (common hardening).
+    """
+    found: dict[str, SoftwareFinding] = {}
+    for asset_url in _ASSET_URL_RE.findall(html):
+        slug_match = _ASSET_SLUG_RE.search(asset_url)
+        if not slug_match or slug_match.group(1) != kind:
+            continue
+        slug = slug_match.group(2)
+        if slug in found:
+            continue
+        version_match = _ASSET_VERSION_QUERY_RE.search(asset_url)
+        found[slug] = SoftwareFinding(slug=slug, version=version_match.group(1) if version_match else None, source="passive")
+    return tuple(found.values())
 
 
 def enumerate_plugins_passive(target: Target, timeout: float = 10.0) -> tuple[SoftwareFinding, ...]:
     """Scan the homepage's own markup for wp-content/plugins/<slug> refs
-    (enqueued <script>/<link> tags) — zero extra requests beyond the
-    one page fetch, and it only ever reports what's actually loaded.
+    — zero extra requests beyond the one page fetch, and it only ever
+    reports what's actually loaded.
     """
     url = resolve_in_scope_url(target, "/")
     response = requests.get(url, timeout=timeout)
-    slugs = _passive_slugs(response.text, _PLUGIN_PATH_RE)
-    return tuple(SoftwareFinding(slug=slug, version=None, source="passive") for slug in slugs)
+    return _passive_findings(response.text, "plugins")
 
 
 def enumerate_plugins_active(
@@ -143,28 +163,38 @@ def enumerate_plugins_active(
 
 
 def enumerate_themes(target: Target, timeout: float = 10.0) -> tuple[SoftwareFinding, ...]:
-    """Passive: find the active theme's slug from the homepage's own
-    markup, then actively fetch its style.css for the version header.
-    Themes are singular (one active theme), unlike plugins, so no
-    wordlist brute-force is needed here.
+    """Passive: find the active theme's slug (and often its version, via
+    the `?ver=` cache-busting query string) from the homepage's own
+    markup. Only actively fetches style.css for a theme the passive
+    scan couldn't already version — avoids a doomed request when
+    style.css is blocked, which is common hardening. Themes are
+    singular (one active theme), unlike plugins, so no wordlist
+    brute-force is needed here.
     """
     url = resolve_in_scope_url(target, "/")
     response = requests.get(url, timeout=timeout)
-    slugs = _passive_slugs(response.text, _THEME_PATH_RE)
+    passive = _passive_findings(response.text, "themes")
 
     found = []
-    for slug in slugs:
-        style_url = resolve_in_scope_url(target, f"/wp-content/themes/{slug}/style.css")
+    for finding in passive:
+        if finding.version:
+            found.append(finding)
+            continue
+        style_url = resolve_in_scope_url(target, f"/wp-content/themes/{finding.slug}/style.css")
         try:
             style_response = requests.get(style_url, timeout=timeout)
         except requests.RequestException:
-            found.append(SoftwareFinding(slug=slug, version=None, source="passive"))
+            found.append(finding)
             continue
         if style_response.status_code != 200:
-            found.append(SoftwareFinding(slug=slug, version=None, source="passive"))
+            found.append(finding)
             continue
         match = _THEME_STYLE_VERSION_RE.search(style_response.text)
-        found.append(SoftwareFinding(slug=slug, version=match.group(1) if match else None, source="active"))
+        found.append(
+            SoftwareFinding(slug=finding.slug, version=match.group(1) if match else None, source="active")
+            if match
+            else finding
+        )
     return tuple(found)
 
 
@@ -227,12 +257,14 @@ def run_wp_enum(
 
     passive_plugins = enumerate_plugins_passive(target, timeout=timeout)
     passive_slugs = tuple(finding.slug for finding in passive_plugins)
-    # Actively probe every passively-found slug too (its readme.txt is the
-    # only way to get a version for it — a passive hit alone never reveals
-    # one), plus whatever's left of the wordlist, to find plugins that
-    # aren't currently enqueued on the homepage at all.
+    # Passively-found slugs with no version yet (the `?ver=` query string
+    # wasn't present) still get an active readme.txt probe — the only
+    # other way to learn one. Slugs the passive scan already versioned
+    # skip the extra request entirely. Plus whatever's left of the
+    # wordlist, to find plugins that aren't currently enqueued at all.
+    slugs_needing_version = tuple(finding.slug for finding in passive_plugins if not finding.version)
     wordlist_slugs = tuple(slug for slug in plugin_slugs if slug not in passive_slugs)
-    active_plugins = enumerate_plugins_active(target, slugs=passive_slugs + wordlist_slugs, timeout=timeout)
+    active_plugins = enumerate_plugins_active(target, slugs=slugs_needing_version + wordlist_slugs, timeout=timeout)
     active_by_slug = {finding.slug: finding for finding in active_plugins}
     plugins = tuple(active_by_slug.get(finding.slug, finding) for finding in passive_plugins) + tuple(
         finding for finding in active_plugins if finding.slug not in passive_slugs

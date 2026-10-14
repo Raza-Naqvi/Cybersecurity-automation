@@ -84,6 +84,17 @@ def test_enumerate_plugins_passive_dedupes(target):
     assert all(f.source == "passive" for f in findings)
 
 
+def test_enumerate_plugins_passive_extracts_version_from_ver_query_string(target):
+    """WordPress enqueues assets with a ?ver= cache-busting query string
+    matching the plugin's own version — a real version, zero extra
+    requests, and it still works when readme.txt is blocked.
+    """
+    html = "<script src='/wp-content/plugins/cookie-law-info/public/js/cli.js?ver=2.19.1'></script>"
+    with patch("requests.get", return_value=MagicMock(status_code=200, text=html)):
+        findings = enumerate_plugins_passive(target)
+    assert findings == (SoftwareFinding(slug="cookie-law-info", version="2.19.1", source="passive"),)
+
+
 def test_enumerate_plugins_active_finds_version_and_skips_missing(target):
     found = MagicMock(status_code=200, text="Stable tag: 8.1.0\n")
     missing = MagicMock(status_code=404, text="")
@@ -105,6 +116,14 @@ def test_enumerate_themes_parses_version(target):
     with patch("requests.get", side_effect=[homepage, style]):
         findings = enumerate_themes(target)
     assert findings == (SoftwareFinding(slug="twentytwentyfour", version="1.2", source="active"),)
+
+
+def test_enumerate_themes_extracts_version_from_ver_query_string_without_active_fetch(target):
+    html = "<link href='/wp-content/themes/atumlabs/style.css?ver=4.2.0'>"
+    with patch("requests.get", return_value=MagicMock(status_code=200, text=html)) as mock_get:
+        findings = enumerate_themes(target)
+    assert findings == (SoftwareFinding(slug="atumlabs", version="4.2.0", source="passive"),)
+    mock_get.assert_called_once()  # no active style.css fetch needed — the version is already known
 
 
 def test_enumerate_themes_handles_missing_style_css(target):
@@ -174,6 +193,25 @@ def test_run_wp_enum_short_circuits_on_non_wordpress(target):
     assert result.plugins == ()
     assert result.themes == ()
     assert result.usernames == ()
+
+
+def test_run_wp_enum_skips_active_probe_when_passive_version_known(target):
+    home_detect = MagicMock(status_code=200, text="<html>wp-content here</html>")
+    readme_core = MagicMock(status_code=200, text="Version 6.4.2\n")
+    homepage_plugins = MagicMock(
+        status_code=200, text="<script src='/wp-content/plugins/cookie-law-info/cli.js?ver=2.19.1'>"
+    )
+    homepage_themes = MagicMock(status_code=200, text="<html>no theme refs</html>")
+    rest_users = MagicMock(status_code=401)
+
+    with patch(
+        "requests.get",
+        side_effect=[home_detect, readme_core, homepage_plugins, homepage_themes, rest_users],
+    ) as mock_get:
+        result = run_wp_enum(target, plugin_slugs=(), user_max_id=0, check_rate_limit=False)
+
+    assert result.plugins == (SoftwareFinding(slug="cookie-law-info", version="2.19.1", source="passive"),)
+    assert mock_get.call_count == 5  # no readme.txt probe — the version was already known
 
 
 def test_run_wp_enum_rejects_target_without_base_url():
