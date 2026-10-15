@@ -359,7 +359,7 @@ Four checks, each independently configured:
   it's accepted as real.
 
 **Infra tester** (Phase 4.8 — TLS/cert misconfiguration and general
-server misconfiguration). Wraps three external tools rather than
+server misconfiguration). Wraps four external tools rather than
 reimplementing them — install them separately first:
 
 ```bash
@@ -375,10 +375,15 @@ target's `base_url`, and at least one of the two is required. `nuclei`
 (optional — install separately, `go install -v
 github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest` or a prebuilt
 binary) runs a broad template-based scan and flags any match above
-"info" severity, same "signal, not a verdict" caveat as the other
-scanners here. Use `--skip-testssl`/`--skip-nikto`/`--skip-nuclei` to
-run just the ones you want.
-Install/usage details for all three (and every other external tool this
+"info" severity. **OWASP ZAP's baseline scan** (optional — needs Docker,
+nothing else to install; pulls the official `zaproxy/zap-stable` image
+automatically on first run) runs a short spider + ZAP's passive scan
+rules and flags any alert above ZAP's "Informational" risk level —
+same "signal, not a verdict" caveat as every other scanner here. Use
+`--skip-testssl`/`--skip-nikto`/`--skip-nuclei`/`--skip-zap` to run
+just the ones you want (`--zap-spider-minutes` to adjust how long ZAP's
+spider crawls first, default 1 minute).
+Install/usage details for all four (and every other external tool this
 toolkit wraps or references) are in `docs/pentest-tools-howto.md`.
 
 Every report uploads straight to Cloudinary as JSON + HTML — nothing is
@@ -445,7 +450,7 @@ security-toolkit/
 │   ├── credentials_db.py             # MongoDB-backed test-account credential store, keyed by target+label
 │   ├── report_index.py               # MongoDB index of every report ever uploaded — for the planned dashboard
 │   ├── doctor_checks.py              # Pure logic behind scripts/doctor.py (OS/package-manager detection, checks)
-│   ├── tool_locations.py             # Resolves testssl.sh/nikto/dirsearch/subfinder: PATH first, then a vendor/ fallback (subfinder: PATH only)
+│   ├── tool_locations.py             # Resolves testssl.sh/nikto/dirsearch/subfinder/docker: PATH first, then a vendor/ fallback (subfinder/nuclei/docker: PATH only)
 │   ├── orchestrator.py               # Pure "what to run/skip and why" logic behind scripts/run_all_tests.py
 │   ├── findings_report.py            # Phase 4.10: aggregates flagged findings into one consolidated Markdown draft
 │   ├── env_file.py                   # Merge-in-place .env updates (legacy credential path only)
@@ -468,7 +473,7 @@ security-toolkit/
 │   │   ├── ssrf_testing.py           # Phase 4.5: SSRF via webhook.site out-of-band callback confirmation
 │   │   ├── upload_testing.py         # Phase 4.6: file-upload testing (extension/content-type/polyglot)
 │   │   ├── business_logic_testing.py # Phase 4.7: price tamper, coupon reuse, rate limiting, forged webhooks
-│   │   └── infra_testing.py          # Phase 4.8: wraps testssl.sh + nikto (required), nuclei (optional)
+│   │   └── infra_testing.py          # Phase 4.8: wraps testssl.sh + nikto (required), nuclei + OWASP ZAP via Docker (optional)
 │   ├── legacy_whitebox/              # NOT used currently — needs server/DB/code access, see above
 │   │   ├── incident_triage.py
 │   │   ├── monthly_checklist.py

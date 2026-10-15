@@ -271,6 +271,13 @@ def main() -> int:
         "or download a prebuilt binary — see docs/pentest-tools-howto.md §2.3. "
         "Run 'nuclei -update-templates' once after installing.",
     )
+    docker_result = check_tool_on_path(
+        display_name="docker (for OWASP ZAP)",
+        which_name="docker",
+        fix_hint="Install Docker Desktop from docker.com and make sure it's running — "
+        "see docs/pentest-tools-howto.md §0/§2.2. The zaproxy/zap-stable image is "
+        "pulled automatically on first run, nothing to install for ZAP itself.",
+    )
 
     import os
 
@@ -284,7 +291,7 @@ def main() -> int:
         {k: v for k, v in os.environ.items() if k.startswith("WORDFENCE_")}
     )
 
-    optional_results = [subfinder_result, dirsearch_result, nuclei_result, safe_browsing_result, wordfence_result]
+    optional_results = [subfinder_result, dirsearch_result, nuclei_result, docker_result, safe_browsing_result, wordfence_result]
     results.extend(optional_results)
 
     print()

@@ -80,3 +80,13 @@ def resolve_dirsearch_bin() -> tuple[str, ...]:
     if VENDORED_DIRSEARCH_PATH.exists() and python3:
         return (python3, str(VENDORED_DIRSEARCH_PATH))
     return ("dirsearch",)
+
+
+def resolve_docker_bin() -> tuple[str, ...]:
+    """PATH's `docker`, else the bare command name (no vendoring
+    fallback — Docker itself has to be installed separately, see
+    docs/pentest-tools-howto.md §0; used to run ZAP's official
+    `zaproxy/zap-stable` image rather than a native ZAP install).
+    """
+    on_path = shutil.which("docker")
+    return (on_path,) if on_path else ("docker",)
