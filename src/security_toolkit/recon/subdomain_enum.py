@@ -36,7 +36,7 @@ class SubdomainEnumResult:
 
 def _domain_from_target(target: Target) -> str:
     if not target.base_url:
-        raise RuntimeError(f"Target '{target.name}' has no base_url in scope.json")
+        raise RuntimeError(f"Target '{target.name}' has no base_url set")
     hostname = urlparse(target.base_url).hostname
     if not hostname:
         raise RuntimeError(f"Could not parse a hostname out of target '{target.name}'s base_url")

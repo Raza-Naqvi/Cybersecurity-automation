@@ -3,7 +3,7 @@
 target — our own alternative to WPScan (see recon/wp_enum.py).
 
 Pure HTTP(S), no external tool/API token needed. Only meaningful
-against a target with `"type": "wordpress"` in scope.json; run against
+against a target with `"type": "wordpress"` in its scope entry; run against
 anything else it just reports "not WordPress" and stops.
 
 Usage:
@@ -25,7 +25,7 @@ from security_toolkit.reporting.report import Finding, build_report
 
 def main() -> int:
     parser = ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument(
         "--user-max-id", type=int, default=DEFAULT_USER_MAX_ID,
         help=f"How many ?author=N IDs to probe if the REST API doesn't reveal usernames (default {DEFAULT_USER_MAX_ID})",
@@ -42,7 +42,7 @@ def main() -> int:
         return 1
 
     if not target.base_url:
-        print(f"ERROR: target '{target.name}' has no base_url in scope.json", file=sys.stderr)
+        print(f"ERROR: target '{target.name}' has no base_url set", file=sys.stderr)
         return 1
 
     result = run_wp_enum(target, user_max_id=args.user_max_id, check_rate_limit=not args.skip_rate_limit)

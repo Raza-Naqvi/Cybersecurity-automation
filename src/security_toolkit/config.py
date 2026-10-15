@@ -2,13 +2,13 @@
 
 This module is the single authorization gate: every check in this toolkit
 must resolve its target through `load_authorized_target`, which refuses to
-return anything not explicitly listed in config/scope.json. Never bypass
-this by hardcoding a path or URL directly in a script.
+return anything not explicitly listed in the authorized-target store
+(MongoDB, via `scope_db.py` — see below). Never bypass this by hardcoding
+a path or URL directly in a script.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from dataclasses import dataclass
@@ -19,10 +19,9 @@ from typing import Any
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SCOPE_PATH = REPO_ROOT / "config" / "scope.json"
 
-# The toolkit's OWN MongoDB state (credentials_db.py, report_index.py) —
-# never the target app's database.
+# The toolkit's OWN MongoDB state (credentials_db.py, report_index.py,
+# scope_db.py) — never the target app's database.
 DEFAULT_MONGODB_URI = "mongodb://localhost:27017"
 DEFAULT_MONGODB_DB_NAME = "security_toolkit"
 
@@ -40,7 +39,7 @@ class Target:
     base_url: str | None
     known_admin_logins: tuple[str, ...]
     notes: str
-    # Raw auth config block from scope.json (schema varies by `auth["type"]`);
+    # Raw auth config block from the target's scope store entry (schema varies by `auth["type"]`);
     # see security_toolkit.recon.auth.build_auth_provider for the schema per type.
     auth: dict | None = None
 
@@ -103,7 +102,7 @@ def load_credentials_from_env(prefix: str, dotenv_path: Path | None = None) -> C
     if not username or not password:
         raise ScopeError(
             f"Missing {username_key}/{password_key} in the environment. "
-            "Add them to .env (never to scope.json or source code)."
+            "Add them to .env (never to the scope store or source code)."
         )
     return Credentials(username=username, password=password)
 
@@ -157,51 +156,54 @@ def load_test_credentials(target_name: str, label: str, uri: str | None = None) 
     return Credentials(username=stored.username, password=stored.password)
 
 
-def _read_scope_file(scope_path: Path) -> list[dict]:
-    if not scope_path.exists():
-        raise ScopeError(
-            f"No scope file at {scope_path}. Copy config/scope.example.json to "
-            "config/scope.json and list only systems you're authorized to test."
-        )
-    with scope_path.open(encoding="utf-8") as handle:
-        data = json.load(handle)
-    targets = data.get("authorized_targets", [])
-    if not isinstance(targets, list):
-        raise ScopeError("config/scope.json: 'authorized_targets' must be a list.")
-    return targets
-
-
-def list_authorized_targets(scope_path: Path | None = None) -> tuple[Target, ...]:
-    raw_targets = _read_scope_file(scope_path or DEFAULT_SCOPE_PATH)
-    return tuple(
-        Target(
-            name=item["name"],
-            type=item.get("type", "unknown"),
-            environment=item.get("environment", "unknown"),
-            wp_path=item.get("wp_path"),
-            base_url=item.get("base_url"),
-            known_admin_logins=tuple(item.get("known_admin_logins", [])),
-            notes=item.get("notes", ""),
-            auth=item.get("auth"),
-        )
-        for item in raw_targets
+def _target_from_doc(item: dict) -> Target:
+    return Target(
+        name=item["name"],
+        type=item.get("type", "unknown"),
+        environment=item.get("environment", "unknown"),
+        wp_path=item.get("wp_path"),
+        base_url=item.get("base_url"),
+        known_admin_logins=tuple(item.get("known_admin_logins", [])),
+        notes=item.get("notes", ""),
+        auth=item.get("auth"),
     )
 
 
-def load_authorized_target(name: str, scope_path: Path | None = None) -> Target:
-    """Return the named target only if it's explicitly listed in scope.json."""
-    targets = list_authorized_targets(scope_path)
-    matches = [target for target in targets if target.name == name]
-    if not matches:
-        known = ", ".join(t.name for t in targets) or "(none configured)"
+def list_authorized_targets() -> tuple[Target, ...]:
+    from security_toolkit.scope_db import list_all_targets
+
+    try:
+        raw_targets = list_all_targets()
+    except Exception as exc:  # noqa: BLE001 — any Mongo connection/auth failure
         raise ScopeError(
-            f"'{name}' is not in config/scope.json. Known targets: {known}. "
-            "Add it there before running any check against it."
+            f"Could not reach the MongoDB scope store: {exc}. Run scripts/doctor.py to check MONGODB_URI."
+        ) from exc
+    return tuple(_target_from_doc(item) for item in raw_targets)
+
+
+def load_authorized_target(name: str) -> Target:
+    """Return the named target only if it's explicitly listed in the
+    authorized-target store (MongoDB, shared across every machine
+    pointed at the same MONGODB_URI).
+    """
+    from security_toolkit.scope_db import load_target
+
+    try:
+        doc = load_target(name)
+    except Exception as exc:  # noqa: BLE001 — any Mongo connection/auth failure
+        raise ScopeError(
+            f"Could not reach the MongoDB scope store: {exc}. Run scripts/doctor.py to check MONGODB_URI."
+        ) from exc
+    if doc is None:
+        known = ", ".join(t.name for t in list_authorized_targets()) or "(none configured)"
+        raise ScopeError(
+            f"'{name}' is not in the authorized-target store. Known targets: {known}. "
+            "Add it with scripts/manage_scope.py add before running any check against it."
         )
-    return matches[0]
+    return _target_from_doc(doc)
 
 
-def load_authorized_target_cli(name: str, scope_path: Path | None = None) -> Target | None:
+def load_authorized_target_cli(name: str) -> Target | None:
     """`load_authorized_target`, with the "print to stderr and return None on
     failure" handling every scripts/run_*.py entrypoint needs identically.
 
@@ -211,7 +213,7 @@ def load_authorized_target_cli(name: str, scope_path: Path | None = None) -> Tar
             return 1
     """
     try:
-        return load_authorized_target(name, scope_path)
+        return load_authorized_target(name)
     except ScopeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return None

@@ -1,7 +1,7 @@
 """Pluggable login adapters so the IDOR tester works across different
 sites without new code per site — WordPress, Laravel, and a custom
 Node/Express app all authenticate differently, so each one is a small,
-data-driven adapter selected by the `auth.type` field in config/scope.json,
+data-driven adapter selected by the `auth.type` field in a target's scope entry,
 not a hardcoded flow.
 
 Every adapter's contract is the same: given a `requests.Session` and
@@ -9,7 +9,7 @@ Every adapter's contract is the same: given a `requests.Session` and
 header) so later requests on that session are authenticated as that user.
 None of these ever log the password; failures report the HTTP status only.
 
-Supported `auth.type` values and their scope.json shape:
+Supported `auth.type` values and their scope-entry shape:
 
     "wordpress" (cookie-based, wp-login.php):
         {"type": "wordpress", "login_url": "https://site/wp-login.php"}
@@ -52,7 +52,7 @@ from security_toolkit.recon.html_forms import extract_inputs
 
 
 class AuthConfigError(ValueError):
-    """Raised when an `auth` block in scope.json is missing required keys."""
+    """Raised when an `auth` block in a target's scope entry is missing required keys."""
 
 
 class AuthFailure(RuntimeError):
@@ -74,7 +74,7 @@ class AuthProvider(Protocol):
 
 def _require(config: dict, key: str, auth_type: str) -> Any:
     if key not in config:
-        raise AuthConfigError(f"auth.type={auth_type!r} requires '{key}' in scope.json")
+        raise AuthConfigError(f"auth.type={auth_type!r} requires '{key}' in its scope entry")
     return config[key]
 
 
@@ -182,7 +182,7 @@ def wordpress_auth_provider(login_url: str) -> FormSessionAuthProvider:
 
 
 def build_auth_provider(auth_config: dict) -> AuthProvider:
-    """Build the right adapter from a target's `auth` block in scope.json."""
+    """Build the right adapter from a target's `auth` block in its scope entry."""
     auth_type = auth_config.get("type")
     if auth_type == "wordpress":
         return wordpress_auth_provider(_require(auth_config, "login_url", auth_type))

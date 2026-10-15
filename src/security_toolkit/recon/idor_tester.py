@@ -7,7 +7,7 @@ passed explicitly per test case (use that only for a disposable staging
 account's own data, per the playbook's safety rule).
 
 Every URL this module hits must start with the authorized target's
-`base_url` from config/scope.json — see `require_in_scope`.
+`base_url` from the target's scope entry — see `require_in_scope`.
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@ class OutOfScopeError(RuntimeError):
 
 def require_in_scope(url: str, target: Target) -> None:
     if not target.base_url:
-        raise OutOfScopeError(f"Target '{target.name}' has no base_url configured in scope.json")
+        raise OutOfScopeError(f"Target '{target.name}' has no base_url configured")
     base = urlparse(target.base_url)
     candidate = urlparse(url)
     if (candidate.scheme, candidate.netloc) != (base.scheme, base.netloc):

@@ -29,7 +29,7 @@ from security_toolkit.reporting.report import Finding, build_report
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument("--cases", required=True, help="Path to a JSON file of business-logic cases")
     args = parser.parse_args()
 

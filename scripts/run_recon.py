@@ -2,7 +2,7 @@
 """CLI: Phase 4.2 black-box recon report for an authorized target.
 
 Pure HTTP(S) — no filesystem, DB, or server access needed. Safe to run
-against any staging target with just its base_url set in scope.json.
+against any staging target with just its base_url set in the scope store.
 
 Usage:
     python scripts/run_recon.py --target example-staging
@@ -27,7 +27,7 @@ from security_toolkit.reporting.report import Finding, build_report
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument(
         "--skip-subdomain-enum", action="store_true", help="Skip the subfinder subdomain-enumeration check"
     )
@@ -54,7 +54,7 @@ def main() -> int:
         return 1
 
     if not target.base_url:
-        print(f"ERROR: target '{target.name}' has no base_url in scope.json", file=sys.stderr)
+        print(f"ERROR: target '{target.name}' has no base_url set", file=sys.stderr)
         return 1
 
     findings = []

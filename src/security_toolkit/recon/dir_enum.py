@@ -76,7 +76,7 @@ def run_dirsearch(
     wrong dirsearch version, a crash) behind a false "all clear."
     """
     if not target.base_url:
-        raise RuntimeError(f"Target '{target.name}' has no base_url in scope.json")
+        raise RuntimeError(f"Target '{target.name}' has no base_url set")
     require_in_scope(target.base_url, target)
 
     cmd = list(dirsearch_cmd) if dirsearch_cmd else list(resolve_dirsearch_bin())

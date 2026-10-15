@@ -31,7 +31,7 @@ _LEGACY_WARNING = (
 def main() -> int:
     print(_LEGACY_WARNING, file=sys.stderr)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument("--npm-project", action="append", default=[], help="Path to a Node project to audit (repeatable)")
     parser.add_argument("--backup-dir", help="Path to check backup freshness against")
     parser.add_argument("--access-log", help="Path to a server access log to scan for spikes")

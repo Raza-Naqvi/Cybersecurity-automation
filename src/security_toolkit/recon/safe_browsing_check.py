@@ -51,7 +51,7 @@ def check_safe_browsing(
     start).
     """
     if not target.base_url:
-        raise RuntimeError(f"Target '{target.name}' has no base_url in scope.json")
+        raise RuntimeError(f"Target '{target.name}' has no base_url set")
 
     if not api_key:
         return SafeBrowsingResult(

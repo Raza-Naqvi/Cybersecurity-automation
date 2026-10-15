@@ -21,7 +21,7 @@ or DB write.
 
 Every function here only writes to a target resolved through
 `security_toolkit.config.load_authorized_target` — never call
-`register_via_api` with a URL that didn't come from scope.json.
+`register_via_api` with a URL that didn't come from the target's scope entry.
 """
 
 from __future__ import annotations

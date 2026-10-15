@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""CLI: add/list/remove targets in config/scope.json — no manual JSON
-editing. Interactive by default (just answer the prompts); pass flags
-instead for non-interactive/scripted use.
+"""CLI: add/list/remove authorized targets in the MongoDB scope store
+(see src/security_toolkit/scope_db.py) — no manual JSON editing, and
+every machine pointed at the same MONGODB_URI sees the same list.
+Interactive by default (just answer the prompts); pass flags instead
+for non-interactive/scripted use.
 
 Usage:
     python scripts/manage_scope.py add              # guided prompts
@@ -15,16 +17,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from security_toolkit.config import DEFAULT_SCOPE_PATH
 from security_toolkit.recon.auth_detect import AuthDetectionError, detect_auth_config
-from security_toolkit.scope_manager import (
-    build_auth_block,
-    list_target_names,
-    load_scope_data,
-    remove_target,
-    save_scope_data,
-    upsert_target,
-)
+from security_toolkit.scope_db import delete_target, list_all_targets, load_target, save_target
+from security_toolkit.scope_manager import build_auth_block
 
 
 def _prompt(text: str, default: str | None = None, required: bool = True) -> str:
@@ -100,8 +95,6 @@ def _collect_auth_block(args: argparse.Namespace) -> dict | None:
 
 
 def cmd_add(args: argparse.Namespace) -> int:
-    data = load_scope_data(DEFAULT_SCOPE_PATH)
-
     name = args.name
     if name is None and not args.no_interactive:
         name = _prompt("Target name (what you'll pass to --target)")
@@ -109,7 +102,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         print("ERROR: --name is required.", file=sys.stderr)
         return 1
 
-    if name in list_target_names(data) and not args.force:
+    if load_target(name) is not None and not args.force:
         if args.no_interactive:
             print(f"ERROR: '{name}' already exists. Pass --force to overwrite.", file=sys.stderr)
             return 1
@@ -158,31 +151,26 @@ def cmd_add(args: argparse.Namespace) -> int:
     if auth_block:
         target["auth"] = auth_block
 
-    data = upsert_target(data, target)
-    save_scope_data(DEFAULT_SCOPE_PATH, data)
-    print(f"Saved target '{name}' to {DEFAULT_SCOPE_PATH}")
+    save_target(target)
+    print(f"Saved target '{name}' to the MongoDB scope store (MONGODB_URI) — every machine pointed at it will see this target.")
     print(f"Run it with, e.g.: python scripts/run_recon.py --target {name}")
     return 0
 
 
 def cmd_list(_args: argparse.Namespace) -> int:
-    data = load_scope_data(DEFAULT_SCOPE_PATH)
-    names = list_target_names(data)
-    if not names:
+    targets = list_all_targets()
+    if not targets:
         print("No targets configured yet. Run: python scripts/manage_scope.py add")
         return 0
-    for name in names:
-        print(f"- {name}")
+    for target in targets:
+        print(f"- {target['name']}")
     return 0
 
 
 def cmd_remove(args: argparse.Namespace) -> int:
-    data = load_scope_data(DEFAULT_SCOPE_PATH)
-    if args.name not in list_target_names(data):
+    if not delete_target(args.name):
         print(f"'{args.name}' not found.", file=sys.stderr)
         return 1
-    data = remove_target(data, args.name)
-    save_scope_data(DEFAULT_SCOPE_PATH, data)
     print(f"Removed '{args.name}'.")
     return 0
 

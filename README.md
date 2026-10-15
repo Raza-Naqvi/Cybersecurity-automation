@@ -33,15 +33,19 @@ below for why it's kept and why you probably don't want to run it.
   beyond the two disposable test accounts it's explicitly told to use, or
   changes anything on the target site.
 - **Isn't:** a scanner you point at someone else's site. Every script
-  refuses to run against anything not explicitly listed in
-  `config/scope.json` — see **Authorization model** below.
+  refuses to run against anything not explicitly listed in the
+  authorized-target scope store — see **Authorization model** below.
 
 ## Authorization model
 
-Every script resolves its target through `config/scope.json`, which is
-**gitignored** — each person/environment keeps their own copy, scoped to
-sites they're actually authorized to test. There is no way to point a
-script at a URL that isn't listed there.
+Every script resolves its target through the MongoDB scope store
+(`src/security_toolkit/scope_db.py`) — the toolkit's own state, same
+`MONGODB_URI` as credentials/report-index, shared across every machine
+your team points at that same instance, so you only add a target once
+and everyone's in sync. There is no way to point a script at a URL
+that isn't listed there. (Older versions of this toolkit used a local,
+gitignored `config/scope.json` instead — `scripts/migrate_scope_to_mongo.py`
+does a one-time import if you still have one.)
 
 Add a target with `scripts/manage_scope.py` — no manual JSON editing:
 
@@ -65,18 +69,19 @@ targets, `python scripts/manage_scope.py remove --name <name>` to drop
 one. Only list systems your team has signed-off access to test — a
 staging clone, not production, per the playbook's safety rule.
 
-If a script errors with "`X` is not in config/scope.json" — that's working
-as intended. Add the target first with `manage_scope.py add`.
+If a script errors with "`X` is not in the authorized-target store" —
+that's working as intended. Add the target first with `manage_scope.py add`.
 
 ## Setup
 
 Nothing persists locally except this repo and `.env` — reports go to
-Cloudinary, test-account credentials go to MongoDB, scope config is the
-only thing that's a local file (and it's gitignored). That's deliberate:
-clone this repo on any machine, fill in `.env`, and you're back where
-you left off, since the actual state lives in Mongo/Cloudinary, not on
-disk. See `docs/RUNBOOK.md` for the bare command list; here's the same
-thing explained:
+Cloudinary, and the scope list/test-account credentials/report index
+all go to MongoDB. That's deliberate: clone this repo on any machine,
+fill in `.env` with the same `MONGODB_URI`/`CLOUDINARY_URL` your team
+already uses, and you're back where you left off — targets included —
+since the actual state lives in Mongo/Cloudinary, not on disk. See
+`docs/RUNBOOK.md` for the bare command list; here's the same thing
+explained:
 
 ```bash
 git clone <this-repo>
@@ -97,7 +102,8 @@ python scripts/doctor.py
 
 Then add your target — see **Authorization model** above — with
 `scripts/manage_scope.py add`, and you're ready for **Running the
-checks** below. Never commit `.env` or `config/scope.json`.
+checks** below. Never commit `.env` (or a leftover local `config/scope.json`
+from before the move to MongoDB).
 
 ## Running everything at once (the normal way to use this)
 
@@ -148,7 +154,7 @@ wordlist-based directory/file brute-force via `dirsearch` (§2.5) — a
 deeper, slower generalization of the fixed exposed-files list above —
 a malware/phishing blacklist check via Google Safe Browsing (§7.2b,
 needs a free `GOOGLE_SAFE_BROWSING_API_KEY` in `.env`), and — only for a
-target with `"type": "wordpress"` in scope.json — WordPress core/plugin/
+target with `"type": "wordpress"` in its scope entry — WordPress core/plugin/
 theme/user enumeration via `wp_enum.py`, our own alternative to WPScan
 (§2.1; no external tool or API token needed), followed by vulnerability
 matching via `wp_vuln_match.py` against the free **Wordfence Intelligence**
@@ -165,7 +171,7 @@ python scripts/run_wp_test.py --target example-wordpress-staging
 ```
 
 **Auth/session tester** (Phase 4.3 — needs the same `auth` block in
-scope.json and `.env` test-account credentials as the IDOR tester below;
+the scope store and `.env` test-account credentials as the IDOR tester below;
 set those up first, then):
 
 ```bash
@@ -216,7 +222,7 @@ it up once per target:
      python scripts/manage_credentials.py add --target example-staging --label IDOR_USER_B
      ```
 
-3. **Add an `auth` block to that target** in `config/scope.json` — pick
+3. **Add an `auth` block to that target** via `scripts/manage_scope.py` — pick
    the adapter that matches the site (see
    `src/security_toolkit/recon/auth.py`'s docstring for the full schema,
    and `config/scope.example.json` for a filled-in example of each):
@@ -424,8 +430,7 @@ security-toolkit/
 │   ├── pentest-tools-howto.md       # Install/run guide for every external tool the playbook names (companion doc)
 │   └── RUNBOOK.md                   # Just the commands, in order — no explanations
 ├── config/
-│   ├── scope.example.json           # Template for config/scope.json (gitignored) — or just use manage_scope.py
-│   ├── scope.json                   # (gitignored) your real authorized-target list
+│   ├── scope.example.json           # Reference shape for one target entry — the real list lives in MongoDB now (scope_db.py)
 │   ├── idor_cases.example.json      # Template — copy per target, list endpoints to IDOR-test
 │   ├── injection_points.example.json # Template — copy per target, list parameters to probe
 │   ├── upload_cases.example.json     # Template — copy per target, list upload endpoints to probe
@@ -435,7 +440,8 @@ security-toolkit/
 ├── src/security_toolkit/
 │   ├── config.py                    # Authorization gate + env loading — every check goes through this
 │   ├── scope_guard.py                # Shared "never request outside base_url" check
-│   ├── scope_manager.py              # Add/list/remove-target logic behind scripts/manage_scope.py
+│   ├── scope_db.py                   # MongoDB-backed authorized-target store — every machine on the same MONGODB_URI stays in sync
+│   ├── scope_manager.py              # Pure auth-block-building logic for scripts/manage_scope.py
 │   ├── credentials_db.py             # MongoDB-backed test-account credential store, keyed by target+label
 │   ├── report_index.py               # MongoDB index of every report ever uploaded — for the planned dashboard
 │   ├── doctor_checks.py              # Pure logic behind scripts/doctor.py (OS/package-manager detection, checks)
@@ -472,7 +478,8 @@ security-toolkit/
 │       └── cloud_report.py           # Uploads a rendered report to Cloudinary + indexes it in MongoDB
 ├── scripts/
 │   ├── doctor.py                      # Checks + auto-fixes this machine's setup — run first, any machine
-│   ├── manage_scope.py                # Add/list/remove targets in scope.json — no manual JSON editing
+│   ├── manage_scope.py                # Add/list/remove targets in the MongoDB scope store — no manual JSON editing
+│   ├── migrate_scope_to_mongo.py      # One-time import of an old local config/scope.json into MongoDB
 │   ├── provision_test_accounts.py    # Auto-creates the two IDOR/auth test accounts, saves creds to MongoDB
 │   ├── manage_credentials.py         # Add/list/remove test-account credentials in MongoDB by hand
 │   ├── run_all_tests.py              # Runs every check for one target in a single command — the normal way to use this

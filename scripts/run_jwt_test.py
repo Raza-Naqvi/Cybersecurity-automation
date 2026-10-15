@@ -34,7 +34,7 @@ from security_toolkit.reporting.report import Finding, build_report
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument("--token", required=True, help="A captured JWT (e.g. from a browser's Authorization header)")
     parser.add_argument("--protected-path", required=True, help="A path that requires this token, e.g. /account")
     parser.add_argument("--public-key-file", help="Path to a PEM public key, for the RS256->HS256 confusion check")
