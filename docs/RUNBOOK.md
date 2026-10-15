@@ -61,6 +61,10 @@ python scripts/run_business_logic_test.py --target <name> --cases config/busines
 python scripts/run_ssrf_test.py --target <name> --points config/injection_points/<name>.json
 python scripts/run_jwt_test.py --target <name> --token <captured-jwt> --protected-path <path>
 python scripts/run_infra_test.py --target <name>
+# ^ testssl.sh/nikto required (at least one); nuclei + OWASP ZAP (via
+#   Docker, zaproxy/zap-stable image auto-pulled on first run) optional
+#   - --skip-nuclei/--skip-zap to opt out.
+
 python scripts/run_wp_test.py --target <name>
 # ^ WordPress enumeration + vulnerability matching (our own WPScan
 #   alternative) - only meaningful for a target with "type": "wordpress"

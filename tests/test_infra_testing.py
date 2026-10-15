@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from security_toolkit.config import Target
-from security_toolkit.recon.infra_testing import run_nikto, run_nuclei, run_testssl
+from security_toolkit.recon.infra_testing import run_nikto, run_nuclei, run_testssl, run_zap_baseline
 
 
 @pytest.fixture
@@ -202,3 +202,113 @@ def test_run_nuclei_rejects_target_without_base_url():
     )
     with pytest.raises(RuntimeError):
         run_nuclei(target_no_url)
+
+
+def _zap_report(*alerts: dict) -> dict:
+    return {"site": [{"@name": "https://staging.example.com", "alerts": list(alerts)}]}
+
+
+def _write_report_side_effect(work_dir, report: dict):
+    def _side_effect(*args, **kwargs):
+        (work_dir / "report.json").write_text(json.dumps(report))
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    return _side_effect
+
+
+def test_run_zap_baseline_flags_non_informational_alert(target, tmp_path):
+    report = _zap_report({"name": "SQL Injection", "riskcode": "3", "riskdesc": "High (Medium)"})
+    with patch("subprocess.run", side_effect=_write_report_side_effect(tmp_path, report)):
+        result = run_zap_baseline(target, work_dir=tmp_path)
+
+    assert result.flagged is True
+    assert "SQL Injection" in result.detail
+    assert "High" in result.detail
+
+
+def test_run_zap_baseline_informational_only_not_flagged(target, tmp_path):
+    report = _zap_report({"name": "Information Disclosure - Suspicious Comment", "riskcode": "0", "riskdesc": "Informational (Low)"})
+    with patch("subprocess.run", side_effect=_write_report_side_effect(tmp_path, report)):
+        result = run_zap_baseline(target, work_dir=tmp_path)
+
+    assert result.flagged is False
+    assert "informational" in result.detail.lower()
+
+
+def test_run_zap_baseline_no_alerts_not_flagged(target, tmp_path):
+    report = _zap_report()
+    with patch("subprocess.run", side_effect=_write_report_side_effect(tmp_path, report)):
+        result = run_zap_baseline(target, work_dir=tmp_path)
+
+    assert result.flagged is False
+    assert "No findings" in result.detail
+
+
+def test_run_zap_baseline_passes_scoped_url_and_mounts_work_dir(target, tmp_path):
+    report = _zap_report()
+    with patch("subprocess.run", side_effect=_write_report_side_effect(tmp_path, report)) as mock_run:
+        run_zap_baseline(target, work_dir=tmp_path)
+
+    args = mock_run.call_args[0][0]
+    assert "-t" in args
+    assert args[args.index("-t") + 1] == "https://staging.example.com"
+    assert f"{tmp_path}:/zap/wrk/:rw" in " ".join(args)
+    assert "-J" in args
+    assert args[args.index("-J") + 1] == "report.json"
+
+
+def test_run_zap_baseline_exit_code_3_is_a_tool_failure(target, tmp_path):
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=3, stdout="", stderr="ZAP failed to start")
+        result = run_zap_baseline(target, work_dir=tmp_path)
+
+    assert result.succeeded is False
+    assert result.flagged is True
+    assert "ZAP failed to start" in result.detail
+
+
+def test_run_zap_baseline_exit_codes_1_and_2_are_not_tool_failures(target, tmp_path):
+    report = _zap_report({"name": "X", "riskcode": "1", "riskdesc": "Low (Medium)"})
+    with patch("subprocess.run", side_effect=_write_report_side_effect(tmp_path, report)) as mock_run:
+        mock_run.side_effect = None
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="")
+        (tmp_path / "report.json").write_text(json.dumps(report))
+        result = run_zap_baseline(target, work_dir=tmp_path)
+
+    assert result.succeeded is True
+    assert result.flagged is True
+
+
+def test_run_zap_baseline_missing_report_file_is_flagged(target, tmp_path):
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        result = run_zap_baseline(target, work_dir=tmp_path)
+
+    assert result.succeeded is False
+    assert result.flagged is True
+    assert "report.json" in result.detail
+
+
+def test_run_zap_baseline_missing_binary_flagged(target, tmp_path):
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        result = run_zap_baseline(target, zap_cmd=("docker-missing",), work_dir=tmp_path)
+
+    assert result.flagged is True
+    assert "not found" in result.detail
+
+
+def test_run_zap_baseline_timeout_flagged(target, tmp_path):
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="docker", timeout=300)):
+        result = run_zap_baseline(target, work_dir=tmp_path)
+
+    assert result.flagged is True
+    assert "timed out" in result.detail
+
+
+def test_run_zap_baseline_rejects_target_without_base_url(tmp_path):
+    target_no_url = Target(
+        name="x", type="custom", environment="staging", wp_path=None, base_url=None,
+        known_admin_logins=(), notes="", auth=None,
+    )
+    with pytest.raises(RuntimeError):
+        run_zap_baseline(target_no_url, work_dir=tmp_path)
