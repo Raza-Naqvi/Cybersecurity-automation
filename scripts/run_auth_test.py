@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CLI: Phase 4.3 black-box auth/session test for an authorized target.
 
-Pure HTTP(S) — reuses the same `auth` block in scope.json as the IDOR
+Pure HTTP(S) — reuses the same `auth` block from the MongoDB scope store as the IDOR
 tester. Needs one valid test account (for fixation/logout) and tests a
 known-bad password against it for the rate-limit check — it never
 guesses at a real account.
@@ -30,7 +30,7 @@ from security_toolkit.reporting.report import Finding, build_report
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument("--protected-path", required=True, help="A path only a logged-in user can reach, e.g. /account")
     parser.add_argument("--logout-path", required=True, help="The logout URL path, e.g. /logout")
     parser.add_argument("--logout-method", default="get", choices=["get", "post"])
@@ -45,7 +45,7 @@ def main() -> int:
         return 1
 
     if not target.auth:
-        print(f"ERROR: target '{target.name}' has no 'auth' block in scope.json", file=sys.stderr)
+        print(f"ERROR: target '{target.name}' has no 'auth' block configured", file=sys.stderr)
         return 1
 
     try:

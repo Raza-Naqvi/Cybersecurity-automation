@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """CLI: Phase 4.4 two-account IDOR test, for any site type (WordPress,
-Laravel, custom Node/Express — whatever `auth.type` in scope.json says).
+Laravel, custom Node/Express — whatever `auth.type` in its scope entry says).
 
 Setup (once per target):
-  1. Add an `auth` block to that target in config/scope.json — see
+  1. Add an `auth` block to that target via scripts/manage_scope.py — see
      src/security_toolkit/recon/auth.py's docstring for the schema.
   2. Create two disposable test accounts: `python scripts/provision_test_accounts.py
      --target <name> --register-url <url>` (auto-creates them and stores
@@ -35,7 +35,7 @@ from security_toolkit.reporting.report import Finding, build_report
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument("--cases", required=True, help="Path to a JSON file of IDOR test cases")
     parser.add_argument(
         "--skip-extra-checks", action="store_true",
@@ -49,7 +49,7 @@ def main() -> int:
 
     if not target.auth:
         print(
-            f"ERROR: target '{target.name}' has no 'auth' block in scope.json. "
+            f"ERROR: target '{target.name}' has no 'auth' block configured. "
             "See src/security_toolkit/recon/auth.py for the schema.",
             file=sys.stderr,
         )

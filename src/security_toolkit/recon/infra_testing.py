@@ -58,7 +58,7 @@ def run_testssl(target: Target, testssl_cmd: tuple[str, ...] | None = None, time
     LOW/MEDIUM/HIGH/CRITICAL).
     """
     if not target.base_url:
-        raise RuntimeError(f"Target '{target.name}' has no base_url in scope.json")
+        raise RuntimeError(f"Target '{target.name}' has no base_url set")
     require_in_scope(target.base_url, target)
 
     cmd = list(testssl_cmd) if testssl_cmd else list(resolve_testssl_bin())
@@ -88,7 +88,7 @@ def run_nikto(target: Target, nikto_cmd: tuple[str, ...] | None = None, timeout:
     discard everything found so far.
     """
     if not target.base_url:
-        raise RuntimeError(f"Target '{target.name}' has no base_url in scope.json")
+        raise RuntimeError(f"Target '{target.name}' has no base_url set")
     require_in_scope(target.base_url, target)
 
     cmd = list(nikto_cmd) if nikto_cmd else list(resolve_nikto_bin())
@@ -131,7 +131,7 @@ def run_nuclei(target: Target, nuclei_cmd: tuple[str, ...] | None = None, timeou
     findings" — same reasoning as `dir_enum.run_dirsearch`.
     """
     if not target.base_url:
-        raise RuntimeError(f"Target '{target.name}' has no base_url in scope.json")
+        raise RuntimeError(f"Target '{target.name}' has no base_url set")
     require_in_scope(target.base_url, target)
 
     cmd = list(nuclei_cmd) if nuclei_cmd else list(resolve_nuclei_bin())

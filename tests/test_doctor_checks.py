@@ -11,6 +11,7 @@ from security_toolkit.doctor_checks import (
     check_python_version,
     check_safe_browsing_env_key,
     check_tool_on_path,
+    check_wordfence_env_key,
     detect_os,
     detect_package_manager,
     parse_env_file,
@@ -91,6 +92,17 @@ def test_check_safe_browsing_env_key_passes_when_set():
 
 def test_check_safe_browsing_env_key_fails_when_unset():
     result = check_safe_browsing_env_key({})
+    assert result.passed is False
+    assert result.fix_hint is not None
+
+
+def test_check_wordfence_env_key_passes_when_set():
+    result = check_wordfence_env_key({"WORDFENCE_API_KEY": "abc"})
+    assert result.passed is True
+
+
+def test_check_wordfence_env_key_fails_when_unset():
+    result = check_wordfence_env_key({})
     assert result.passed is False
     assert result.fix_hint is not None
 

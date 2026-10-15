@@ -68,7 +68,7 @@ def _run_script(script_name: str, extra_args: list[str]) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument("--register-url", help="Public registration URL, to auto-create test accounts if none exist yet")
     parser.add_argument("--protected-path", help="A logged-in-only path, for the auth/session test")
     parser.add_argument("--logout-path", help="The logout path, for the auth/session test")

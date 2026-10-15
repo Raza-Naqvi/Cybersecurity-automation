@@ -24,7 +24,7 @@ from security_toolkit.findings_report import collect_flagged_findings, render_ma
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument("--upload", action="store_true", help="Also upload the draft to Cloudinary as a .md file")
     args = parser.parse_args()
 

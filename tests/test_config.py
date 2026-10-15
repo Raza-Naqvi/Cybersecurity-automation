@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 from unittest.mock import patch
@@ -13,38 +11,39 @@ from security_toolkit.config import (
 )
 
 
-def _write_scope(tmp_path, targets):
-    scope_path = tmp_path / "scope.json"
-    scope_path.write_text(json.dumps({"authorized_targets": targets}))
-    return scope_path
-
-
-def test_load_authorized_target_returns_match(tmp_path):
-    scope_path = _write_scope(
-        tmp_path,
-        [{"name": "staging", "type": "wordpress", "environment": "staging", "base_url": "https://staging.test"}],
-    )
-    target = load_authorized_target("staging", scope_path=scope_path)
+def test_load_authorized_target_returns_match():
+    doc = {"name": "staging", "type": "wordpress", "environment": "staging", "base_url": "https://staging.test"}
+    with patch("security_toolkit.scope_db.load_target", return_value=doc):
+        target = load_authorized_target("staging")
     assert target.name == "staging"
     assert target.base_url == "https://staging.test"
 
 
-def test_load_authorized_target_rejects_unknown_name(tmp_path):
-    scope_path = _write_scope(tmp_path, [{"name": "staging"}])
-    with pytest.raises(ScopeError):
-        load_authorized_target("production", scope_path=scope_path)
+def test_load_authorized_target_rejects_unknown_name():
+    with patch("security_toolkit.scope_db.load_target", return_value=None), patch(
+        "security_toolkit.scope_db.list_all_targets", return_value=({"name": "staging"},)
+    ):
+        with pytest.raises(ScopeError):
+            load_authorized_target("production")
 
 
-def test_missing_scope_file_raises(tmp_path):
-    with pytest.raises(ScopeError):
-        load_authorized_target("anything", scope_path=tmp_path / "does-not-exist.json")
+def test_load_authorized_target_raises_scope_error_on_connection_failure():
+    with patch("security_toolkit.scope_db.load_target", side_effect=RuntimeError("auth failed")):
+        with pytest.raises(ScopeError, match="Could not reach"):
+            load_authorized_target("anything")
 
 
-def test_list_authorized_targets_is_immutable_tuple(tmp_path):
-    scope_path = _write_scope(tmp_path, [{"name": "a"}, {"name": "b"}])
-    targets = list_authorized_targets(scope_path)
+def test_list_authorized_targets_is_immutable_tuple():
+    with patch("security_toolkit.scope_db.list_all_targets", return_value=({"name": "a"}, {"name": "b"})):
+        targets = list_authorized_targets()
     assert isinstance(targets, tuple)
     assert [t.name for t in targets] == ["a", "b"]
+
+
+def test_list_authorized_targets_raises_scope_error_on_connection_failure():
+    with patch("security_toolkit.scope_db.list_all_targets", side_effect=RuntimeError("auth failed")):
+        with pytest.raises(ScopeError, match="Could not reach"):
+            list_authorized_targets()
 
 
 def test_load_credentials_from_env_reads_dotenv_path(tmp_path, monkeypatch):

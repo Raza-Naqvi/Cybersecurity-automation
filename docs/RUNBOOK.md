@@ -25,6 +25,12 @@ python scripts/doctor.py
 python scripts/manage_scope.py add
 # interactive — name, base URL, and (pick "auto") the login page URL;
 # it detects the rest. Or pass flags for non-interactive use, see README.
+# Saved to the MongoDB scope store - every teammate on the same
+# MONGODB_URI sees it immediately, no need to add it again per machine.
+
+python scripts/migrate_scope_to_mongo.py
+# one-time only, if you have an old local config/scope.json from
+# before the move to Mongo - imports every target from it.
 ```
 
 ## Every time you test that target
@@ -52,7 +58,18 @@ python scripts/run_idor_test.py --target <name> --cases config/idor_cases/<name>
 python scripts/run_injection_test.py --target <name> --points config/injection_points/<name>.json
 python scripts/run_upload_test.py --target <name> --cases config/upload_cases/<name>.json
 python scripts/run_business_logic_test.py --target <name> --cases config/business_logic_cases/<name>.json
+python scripts/run_ssrf_test.py --target <name> --points config/injection_points/<name>.json
+python scripts/run_jwt_test.py --target <name> --token <captured-jwt> --protected-path <path>
 python scripts/run_infra_test.py --target <name>
+python scripts/run_wp_test.py --target <name>
+# ^ WordPress enumeration + vulnerability matching (our own WPScan
+#   alternative) - only meaningful for a target with "type": "wordpress"
+#   in its scope entry; also runs automatically inside run_recon.py for
+#   such targets. Vulnerability matching needs a free WORDFENCE_API_KEY
+#   in .env - pass --skip-vuln-match to run enumeration only.
+
+python scripts/generate_findings_report.py --target <name>
+# aggregates every flagged finding on record for this target into one draft
 ```
 
 ## Managing test-account credentials by hand (invite-only sites)

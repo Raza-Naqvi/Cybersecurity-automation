@@ -39,7 +39,7 @@ def _unique_identity(label: str) -> tuple[str, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument("--register-url", required=True, help="The site's own public registration page URL")
     parser.add_argument("--mongodb-uri", help="Override MONGODB_URI from .env")
     parser.add_argument("--yes", action="store_true", help="Skip the confirmation prompt (for scripted use)")

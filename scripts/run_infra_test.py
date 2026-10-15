@@ -25,7 +25,7 @@ from security_toolkit.reporting.report import Finding, build_report
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument("--skip-testssl", action="store_true")
     parser.add_argument("--skip-nikto", action="store_true")
     parser.add_argument("--skip-nuclei", action="store_true", help="Skip the nuclei check")
@@ -42,7 +42,7 @@ def main() -> int:
         return 1
 
     if not target.base_url:
-        print(f"ERROR: target '{target.name}' has no base_url in scope.json", file=sys.stderr)
+        print(f"ERROR: target '{target.name}' has no base_url set", file=sys.stderr)
         return 1
 
     findings = []

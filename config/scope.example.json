@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy this file to scope.json (gitignored) and fill in ONLY systems your team owns or has written authorization to test. Every script refuses to run against a target that isn't listed here. The 'auth' block is only needed for the IDOR tester (scripts/run_idor_test.py) — see src/security_toolkit/recon/auth.py for the full schema per type.",
+  "_comment": "Reference shape only — the live authorized-target list is in MongoDB now (src/security_toolkit/scope_db.py), not a local file. Use `python scripts/manage_scope.py add` to add a target (or `python scripts/migrate_scope_to_mongo.py` to import an old local scope.json). Only ever add systems your team owns or has written authorization to test. The 'auth' block is only needed for the IDOR tester (scripts/run_idor_test.py) — see src/security_toolkit/recon/auth.py for the full schema per type.",
   "authorized_targets": [
     {
       "name": "example-wordpress-staging",

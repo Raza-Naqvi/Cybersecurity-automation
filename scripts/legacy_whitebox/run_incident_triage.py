@@ -9,7 +9,7 @@ CLI: Phase 1 incident-triage report for an authorized target.
 Usage:
     python scripts/legacy_whitebox/run_incident_triage.py --target example-staging
 
-Only acts on targets listed in config/scope.json. Detection only — see
+Only acts on targets listed in the MongoDB scope store. Detection only — see
 docstring in src/security_toolkit/legacy_whitebox/incident_triage.py for
 what this does and does not do.
 """
@@ -33,7 +33,7 @@ _LEGACY_WARNING = (
 def main() -> int:
     print(_LEGACY_WARNING, file=sys.stderr)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument("--days", type=int, default=30, help="Lookback window for modified files")
     parser.add_argument("--skip-db", action="store_true", help="Skip the rogue-admin DB check")
     args = parser.parse_args()
@@ -45,7 +45,7 @@ def main() -> int:
         return 1
 
     if not target.wp_path:
-        print(f"ERROR: target '{target.name}' has no wp_path in scope.json", file=sys.stderr)
+        print(f"ERROR: target '{target.name}' has no wp_path configured", file=sys.stderr)
         return 1
 
     findings = []

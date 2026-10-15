@@ -2,7 +2,7 @@
 """CLI: Phase 4.2 black-box recon report for an authorized target.
 
 Pure HTTP(S) — no filesystem, DB, or server access needed. Safe to run
-against any staging target with just its base_url set in scope.json.
+against any staging target with just its base_url set in the scope store.
 
 Usage:
     python scripts/run_recon.py --target example-staging
@@ -19,13 +19,15 @@ from security_toolkit.recon import fingerprint
 from security_toolkit.recon.dir_enum import DEFAULT_EXTENSIONS, run_dirsearch
 from security_toolkit.recon.safe_browsing_check import check_safe_browsing
 from security_toolkit.recon.subdomain_enum import run_subfinder
+from security_toolkit.recon.wp_enum import run_wp_enum
+from security_toolkit.recon.wp_vuln_match import run_wp_vuln_match
 from security_toolkit.reporting.cloud_report import upload_report_cli
 from security_toolkit.reporting.report import Finding, build_report
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, help="Target name from config/scope.json")
+    parser.add_argument("--target", required=True, help="Target name from the MongoDB scope store (scripts/manage_scope.py)")
     parser.add_argument(
         "--skip-subdomain-enum", action="store_true", help="Skip the subfinder subdomain-enumeration check"
     )
@@ -38,6 +40,13 @@ def main() -> int:
     parser.add_argument(
         "--skip-safe-browsing", action="store_true", help="Skip the Google Safe Browsing blacklist check"
     )
+    parser.add_argument(
+        "--skip-wp-enum", action="store_true", help="Skip WordPress enumeration (only runs when target.type == 'wordpress')"
+    )
+    parser.add_argument(
+        "--skip-vuln-match", action="store_true",
+        help="Skip matching detected WordPress versions against the Wordfence Intelligence vulnerability feed",
+    )
     args = parser.parse_args()
 
     target = load_authorized_target_cli(args.target)
@@ -45,7 +54,7 @@ def main() -> int:
         return 1
 
     if not target.base_url:
-        print(f"ERROR: target '{target.name}' has no base_url in scope.json", file=sys.stderr)
+        print(f"ERROR: target '{target.name}' has no base_url set", file=sys.stderr)
         return 1
 
     findings = []
@@ -111,6 +120,25 @@ def main() -> int:
         findings.append(
             Finding(name="Malware/phishing blacklist (Google Safe Browsing)", flagged=safe_browsing.flagged, detail=safe_browsing.detail)
         )
+
+    if not args.skip_wp_enum and target.type == "wordpress":
+        wp_result = run_wp_enum(target)
+        findings.append(Finding(name="WordPress detection/enumeration", flagged=False, detail=wp_result.detail))
+        if wp_result.is_wordpress:
+            findings.append(
+                Finding(
+                    name="WordPress username enumeration",
+                    flagged=len(wp_result.usernames) > 0,
+                    detail=(f"FLAGGED: {', '.join(wp_result.usernames)}" if wp_result.usernames else "no usernames exposed"),
+                )
+            )
+            if not args.skip_vuln_match:
+                if not os.environ.get("WORDFENCE_API_KEY"):
+                    load_env()
+                vuln_result = run_wp_vuln_match(wp_result, api_key=os.environ.get("WORDFENCE_API_KEY"))
+                findings.append(
+                    Finding(name="WordPress vulnerability matching (Wordfence Intelligence)", flagged=vuln_result.flagged, detail=vuln_result.detail)
+                )
 
     report = build_report(title="Recon", target=target.name, findings=findings)
     if upload_report_cli(report) is None:

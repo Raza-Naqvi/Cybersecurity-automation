@@ -1,58 +1,10 @@
-"""Pure logic for reading/writing config/scope.json, kept separate from
-the interactive CLI in scripts/manage_scope.py so it's testable without
-mocking stdin.
-
-Every function here returns a new dict rather than mutating the one it
-was given — scope.json is small, and immutable updates make it obvious
-nothing is shared/mutated by accident between calls.
+"""Pure validation/building logic for `scripts/manage_scope.py`, kept
+separate from the interactive CLI so it's testable without mocking
+stdin. Storage itself (now MongoDB, see `scope_db.py`) lives there —
+this module only builds the `auth` sub-block, which needs no I/O.
 """
 
 from __future__ import annotations
-
-import json
-from pathlib import Path
-
-
-def load_scope_data(path: Path) -> dict:
-    """Load scope.json, or an empty-but-valid structure if it doesn't exist yet."""
-    if not path.exists():
-        return {"authorized_targets": []}
-    with path.open(encoding="utf-8") as handle:
-        data = json.load(handle)
-    data.setdefault("authorized_targets", [])
-    return data
-
-
-def list_target_names(data: dict) -> tuple[str, ...]:
-    return tuple(target.get("name", "") for target in data.get("authorized_targets", []))
-
-
-def get_target(data: dict, name: str) -> dict | None:
-    for target in data.get("authorized_targets", []):
-        if target.get("name") == name:
-            return target
-    return None
-
-
-def upsert_target(data: dict, target: dict) -> dict:
-    """Return a new scope dict with `target` added, or replacing the
-    existing entry of the same name.
-    """
-    if "name" not in target or not target["name"]:
-        raise ValueError("target must have a non-empty 'name'")
-    remaining = [t for t in data.get("authorized_targets", []) if t.get("name") != target["name"]]
-    return {**data, "authorized_targets": [*remaining, target]}
-
-
-def remove_target(data: dict, name: str) -> dict:
-    """Return a new scope dict with the named target removed (no-op if absent)."""
-    remaining = [t for t in data.get("authorized_targets", []) if t.get("name") != name]
-    return {**data, "authorized_targets": remaining}
-
-
-def save_scope_data(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def build_auth_block(
